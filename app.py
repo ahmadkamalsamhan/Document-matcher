@@ -11,7 +11,7 @@ for key in ['results', 'final_df']:
     if key in st.session_state:
         del st.session_state[key]
 
-st.title('King Salman Park - Nesma IRE Matching App with Activities')
+st.title('King Salman Park - Nesma & Partners IRE Matching App with Activities')
 
 # -----------------------------
 # Upload files
