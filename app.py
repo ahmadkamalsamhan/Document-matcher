@@ -130,7 +130,7 @@ if uploaded_files:
         st.warning("⚠️ Please select at least 2 files for matching.")
 
 # =====================================================
-# PART 2 - COLUMN-SPECIFIC OR GLOBAL SEARCH/FILTER
+# PART 2 - COLUMN-SPECIFIC OR GLOBAL SEARCH/FILTER WITH AND/OR
 # =====================================================
 st.header("🔹 Part 2: Search & Filter Data (Column-specific or All Columns)")
 
@@ -151,6 +151,12 @@ if uploaded_filter_file:
             keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
             if keywords:
                 keyword_dict[col] = [k.strip() for k in keywords.split(",") if k.strip()]
+
+        col_logic = st.radio(
+            "Select cross-column logic for multiple columns",
+            options=["AND (match all columns)", "OR (match any column)"],
+            index=0
+        )
     else:
         keywords_input = st.text_input(
             "Enter keywords to search across all columns (comma-separated)"
@@ -159,17 +165,18 @@ if uploaded_filter_file:
     max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
 
     if st.button("🔍 Apply Filter"):
+        def normalize(text):
+            if pd.isna(text): return ""
+            text = str(text).lower()
+            text = re.sub(r'[^a-z0-9\s]', ' ', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            return text
+
         if search_all:
             if not keywords_input.strip():
                 st.warning("⚠️ Please enter at least one keyword.")
             else:
                 st.info("⏳ Searching across all columns...")
-                def normalize(text):
-                    if pd.isna(text): return ""
-                    text = str(text).lower()
-                    text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                    text = re.sub(r'\s+', ' ', text).strip()
-                    return text
                 keywords = [normalize(k) for k in keywords_input.split(",") if k.strip()]
                 df_result = df_filter.copy()
                 df_result = df_result[df_result.apply(
@@ -184,18 +191,22 @@ if uploaded_filter_file:
                 df_result = pd.DataFrame()
             else:
                 st.info("⏳ Filtering data...")
-                def normalize(text):
-                    if pd.isna(text): return ""
-                    text = str(text).lower()
-                    text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                    text = re.sub(r'\s+', ' ', text).strip()
-                    return text
                 df_result = df_filter.copy()
-                for col, keywords in keyword_dict.items():
-                    norm_keywords = [normalize(k) for k in keywords]
-                    df_result = df_result[df_result[col].astype(str).apply(
-                        lambda x: any(k in normalize(x) for k in norm_keywords)
-                    )]
+                if col_logic == "AND (match all columns)":
+                    for col, keywords in keyword_dict.items():
+                        norm_keywords = [normalize(k) for k in keywords]
+                        df_result = df_result[df_result[col].astype(str).apply(
+                            lambda x: any(k in normalize(x) for k in norm_keywords)
+                        )]
+                else:  # OR logic
+                    mask = pd.Series([False]*len(df_result))
+                    for col, keywords in keyword_dict.items():
+                        norm_keywords = [normalize(k) for k in keywords]
+                        col_mask = df_result[col].astype(str).apply(
+                            lambda x: any(k in normalize(x) for k in norm_keywords)
+                        )
+                        mask = mask | col_mask
+                    df_result = df_result[mask]
 
         if df_result.empty:
             st.error("❌ No rows matched your filters.")
