@@ -149,4 +149,65 @@ if uploaded_filter_file:
         filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
         for col in filter_cols:
             keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
-            if
+            if keywords:
+                keyword_dict[col] = [k.strip() for k in keywords.split(",") if k.strip()]
+
+        col_logic = st.radio(
+            "Select cross-column logic for multiple columns",
+            options=["AND (match all columns)", "OR (match any column)"],
+            index=0
+        )
+    else:
+        keywords_input = st.text_input(
+            "Enter keywords to search across all columns (comma-separated)"
+        )
+
+    max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
+
+    if st.button("🔍 Apply Filter (Optimized)"):
+        df_result = df_filter.copy()
+
+        # -----------------------------
+        # Optimized per-column AND/OR
+        # -----------------------------
+        if not search_all and keyword_dict:
+            col_masks = []
+            for col, keywords in keyword_dict.items():
+                pattern = "|".join([re.escape(k.lower().strip()) for k in keywords])
+                mask = df_result[col].astype(str).str.lower().str.contains(pattern, na=False)
+                col_masks.append(mask)
+            if col_logic.startswith("AND"):
+                final_mask = pd.concat(col_masks, axis=1).all(axis=1)
+            else:  # OR
+                final_mask = pd.concat(col_masks, axis=1).any(axis=1)
+            df_result = df_result[final_mask]
+
+        # -----------------------------
+        # Optimized Global Search
+        # -----------------------------
+        elif search_all and keywords_input.strip():
+            keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
+            pattern = "|".join([re.escape(k) for k in keywords])
+            df_result = df_result[df_result.astype(str).apply(
+                lambda row: row.str.lower().str.contains(pattern, na=False).any(), axis=1
+            )]
+
+        # -----------------------------
+        # Display results
+        # -----------------------------
+        if df_result.empty:
+            st.error("❌ No rows matched your filters.")
+        else:
+            st.success(f"✅ Found {len(df_result)} matching rows.")
+            st.dataframe(df_result.head(max_preview))
+
+            csv = df_result.to_csv(index=False).encode("utf-8")
+            st.download_button("💾 Download Filtered Results (CSV)", data=csv,
+                               file_name="filtered_results.csv")
+
+            tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            df_result.to_excel(tmp_xlsx.name, index=False)
+            with open(tmp_xlsx.name, "rb") as f:
+                st.download_button("💾 Download Filtered Results (XLSX)", data=f,
+                                   file_name="filtered_results.xlsx")
+            os.remove(tmp_xlsx.name)
