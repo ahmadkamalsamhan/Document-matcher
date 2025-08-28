@@ -130,9 +130,9 @@ if uploaded_files:
         st.warning("⚠️ Please select at least 2 files for matching.")
 
 # -----------------------------
-# PART 2 - SEARCH & FILTER
+# PART 2 - SEARCH & FILTER (Optimized)
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Column-specific + Global Search)")
+st.header("🔹 Part 2: Search & Filter Data (Optimized for Large Files)")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
@@ -149,71 +149,4 @@ if uploaded_filter_file:
         filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
         for col in filter_cols:
             keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
-            if keywords:
-                keyword_dict[col] = [k.strip() for k in keywords.split(",") if k.strip()]
-
-        col_logic = st.radio(
-            "Select cross-column logic for multiple columns",
-            options=["AND (match all columns)", "OR (match any column)"],
-            index=0
-        )
-    else:
-        keywords_input = st.text_input(
-            "Enter keywords to search across all columns (comma-separated)"
-        )
-
-    max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
-
-    if st.button("🔍 Apply Filter"):
-        df_result = df_filter.copy()
-
-        # -----------------------------
-        # Strict per-column AND/OR
-        # -----------------------------
-        if not search_all and keyword_dict:
-            if col_logic.startswith("AND"):
-                mask = pd.Series(True, index=df_result.index)
-                for col, keywords in keyword_dict.items():
-                    col_mask = df_result[col].astype(str).apply(
-                        lambda cell: any(k.lower().strip() in str(cell).lower() for k in keywords)
-                    )
-                    mask = mask & col_mask
-                df_result = df_result[mask]
-            else:  # OR
-                mask = pd.Series([False]*len(df_result))
-                for col, keywords in keyword_dict.items():
-                    col_mask = df_result[col].astype(str).apply(
-                        lambda cell: any(k.lower().strip() in str(cell).lower() for k in keywords)
-                    )
-                    mask = mask | col_mask
-                df_result = df_result[mask]
-
-        # -----------------------------
-        # Global search across all columns
-        # -----------------------------
-        if search_all and keywords_input.strip():
-            keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
-            df_result = df_result[df_result.apply(
-                lambda row: all(any(k in str(cell).lower() for cell in row) for k in keywords),
-                axis=1
-            )]
-
-        # -----------------------------
-        # Display results
-        # -----------------------------
-        if df_result.empty:
-            st.error("❌ No rows matched your filters.")
-        else:
-            st.success(f"✅ Found {len(df_result)} matching rows.")
-            st.dataframe(df_result.head(max_preview))
-
-            csv = df_result.to_csv(index=False).encode("utf-8")
-            st.download_button("💾 Download Filtered Results (CSV)", data=csv,
-                               file_name="filtered_results.csv")
-
-            tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            df_result.to_excel(tmp_xlsx.name, index=False)
-            with open(tmp_xlsx.name, "rb") as f:
-                st.download_button("💾 Download Filtered Results (XLSX)", data=f,
-                                   file_name="filtered_results.xlsx")
-            os.remove(tmp_xlsx.name)
+            if
