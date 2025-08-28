@@ -162,6 +162,7 @@ if uploaded_filter_file:
     column_keywords = {}
     col_logic = "AND"
     keywords_input = ""
+    global_logic = "OR"
 
     if not search_all:
         filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
@@ -169,16 +170,21 @@ if uploaded_filter_file:
             keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
             if keywords:
                 column_keywords[col] = [k.strip() for k in keywords.split(",") if k.strip()]
-        col_logic = st.radio(
+        col_logic_radio = st.radio(
             "Select cross-column logic for multiple columns",
             options=["AND (match all columns)", "OR (match any column)"],
             index=0
         )
-        col_logic = "AND" if col_logic.startswith("AND") else "OR"
-    else:
-        keywords_input = st.text_input(
-            "Enter keywords to search across all columns (comma-separated)"
-        )
+        col_logic = "AND" if col_logic_radio.startswith("AND") else "OR"
+
+    st.subheader("Global Search Options")
+    keywords_input = st.text_input("Enter keywords to search across all columns (comma-separated)")
+    global_logic_radio = st.radio(
+        "Global keyword logic",
+        options=["AND (match all keywords)", "OR (match any keyword)"],
+        index=1
+    )
+    global_logic = "AND" if global_logic_radio.startswith("AND") else "OR"
 
     max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
 
@@ -191,13 +197,17 @@ if uploaded_filter_file:
             col_mask = filter_dataframe_columnwise_partial(df_result, column_keywords, col_logic)
             final_mask &= col_mask
 
-        # Global keywords filtering
+        # Global keywords filtering with AND/OR logic
         if keywords_input.strip():
             keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
-            pattern = "|".join([re.escape(k) for k in keywords])
-            global_mask = df_result.astype(str).apply(
-                lambda row: row.str.lower().str.contains(pattern, na=False).any(), axis=1
-            )
+            masks = []
+            for k in keywords:
+                mask = df_result.astype(str).apply(lambda row: row.str.lower().str.contains(re.escape(k), na=False).any(), axis=1)
+                masks.append(mask)
+            if global_logic.upper() == "AND":
+                global_mask = pd.concat(masks, axis=1).all(axis=1)
+            else:
+                global_mask = pd.concat(masks, axis=1).any(axis=1)
             final_mask &= global_mask
 
         df_result = df_result[final_mask]
