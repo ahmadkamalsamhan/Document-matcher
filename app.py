@@ -25,9 +25,7 @@ if uploaded_files:
             selected_files.append(file)
 
     if len(selected_files) >= 2:
-        # -----------------------------
-        # Step 2 – Load & preview first two selected files
-        # -----------------------------
+        # Load first two selected files
         df1 = pd.read_excel(selected_files[0])
         df2 = pd.read_excel(selected_files[1])
 
@@ -36,76 +34,81 @@ if uploaded_files:
         st.write(f"Preview – {selected_files[1].name}")
         st.dataframe(df2.head())
 
-        # Fixed columns like Colab version
-        dc_columns = ["DocumentNo.", "Title / Description", "Function", "Discipline",
-                      "Document Revision", "(Final Status)\nOpen or Closed"]
-        details_columns = ["Package", "Phase", "Part", "Managers", "Service", "Line",
-                           "Description", "Start Structure", "End Structure", "MH Type", "Date"]
-
-        df1 = df1[dc_columns]
-        df2 = df2[details_columns]
-
         # -----------------------------
-        # Step 3 – Start Matching Button
+        # Step 2 – Column Selection
         # -----------------------------
-        if st.button("Start Matching"):
-            st.info("⏳ Matching in progress...")
+        st.subheader("Select Columns to Match")
+        cols1 = st.multiselect(f"Select column(s) from {selected_files[0].name}", df1.columns)
+        cols2 = st.multiselect(f"Select column(s) from {selected_files[1].name}", df2.columns)
 
-            # Normalize function
-            def normalize(text):
-                if pd.isna(text):
-                    return ""
-                text = str(text).lower()
-                text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                text = re.sub(r'\s+', ' ', text).strip()
-                return text
+        if cols1 and cols2:
+            if st.button("Start Matching"):
+                st.info("⏳ Matching in progress...")
 
-            df1['norm_title'] = df1["Title / Description"].apply(normalize)
-            df1['title_tokens'] = df1['norm_title'].str.split()
-            df2['norm_mh'] = df2["Start Structure"].apply(normalize)
+                # Normalize function
+                def normalize(text):
+                    if pd.isna(text):
+                        return ""
+                    text = str(text).lower()
+                    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+                    text = re.sub(r'\s+', ' ', text).strip()
+                    return text
 
-            results = []
-            total_rows = len(df2)
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            start_time = time.time()
+                # Normalize columns in df1
+                for col in cols1:
+                    df1[f"norm_{col}"] = df1[col].apply(normalize)
+                    df1[f"tokens_{col}"] = df1[f"norm_{col}"].str.split()
 
-            # Use iterrows() to avoid AttributeError
-            for idx, row in df2.iterrows():
-                mh_tokens = set(row['norm_mh'].split())
-                if not mh_tokens:
-                    continue
-                mask = df1['title_tokens'].apply(lambda x: mh_tokens.issubset(set(x)))
-                matched_rows = df1.loc[mask].copy()
-                if not matched_rows.empty:
-                    for col in details_columns:
-                        matched_rows[col] = row[col]
-                    results.append(matched_rows)
+                # Normalize columns in df2
+                for col in cols2:
+                    df2[f"norm_{col}"] = df2[col].apply(normalize)
 
-                progress_bar.progress((idx + 1) / total_rows)
-                status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
-                time.sleep(0.01)
+                results = []
+                total_rows = len(df2)
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                start_time = time.time()
 
-            end_time = time.time()
-            final_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+                # Iterate rows in df2
+                for idx, row in df2.iterrows():
+                    row_matches = pd.DataFrame()
+                    for col1 in cols1:
+                        for col2 in cols2:
+                            tokens = set(row[f"norm_{col2}"].split())
+                            if not tokens:
+                                continue
+                            mask = df1[f"tokens_{col1}"].apply(lambda x: tokens.issubset(set(x)))
+                            matched_rows = df1.loc[mask].copy()
+                            if not matched_rows.empty:
+                                for c in df2.columns:
+                                    matched_rows[c] = row[c]
+                                row_matches = pd.concat([row_matches, matched_rows], ignore_index=True)
 
-            if not final_df.empty:
-                final_df = final_df[dc_columns + details_columns]
-                final_df = final_df.rename(columns={"(Final Status)\nOpen or Closed": "Final Status"})
-                st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
-                st.dataframe(final_df)
+                    if not row_matches.empty:
+                        results.append(row_matches)
 
-                # -----------------------------
-                # Step 4 – Download
-                # -----------------------------
-                output = BytesIO()
-                final_df.to_excel(output, index=False)
-                st.download_button(
-                    "💾 Download Matched Results",
-                    data=output.getvalue(),
-                    file_name="matched_non_merged_fast.xlsx"
-                )
-            else:
-                st.warning("⚠️ No matches found.")
+                    progress_bar.progress((idx + 1) / total_rows)
+                    status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
+                    time.sleep(0.01)
+
+                end_time = time.time()
+                final_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+
+                if not final_df.empty:
+                    st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
+                    st.dataframe(final_df)
+
+                    # Download button
+                    output = BytesIO()
+                    final_df.to_excel(output, index=False)
+                    st.download_button(
+                        "💾 Download Matched Results",
+                        data=output.getvalue(),
+                        file_name="matched_results.xlsx"
+                    )
+                else:
+                    st.warning("⚠️ No matches found.")
+        else:
+            st.warning("⚠️ Please select at least one column from each file.")
     else:
         st.warning("⚠️ Please select at least 2 files for matching.")
