@@ -10,22 +10,25 @@ st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout
 st.title("📊 King Salman Park - Document Processing App")
 
 # -----------------------------
-# PART 1 - MATCHING
+# GLOBAL RESET BUTTON
 # -----------------------------
-st.header("🔹 Part 1: Matching Two Excel Files")
-
-keys_to_clear = ["uploaded_files", "tmp_path"]
-if st.button("🗑 Clear Uploaded Files / Reset App (Part 1)"):
+if st.button("🗑 Clear/Reset Entire App"):
+    keys_to_clear = ["uploaded_files", "tmp_path", "filter_file"]
     cleared = False
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
             cleared = True
     if cleared:
-        st.success("✅ Uploaded files and session cleared. You can start fresh.")
+        st.success("✅ App fully reset. All uploaded files and filters cleared.")
         st.experimental_rerun()
     else:
         st.success("✅ App is already clean. You can continue normally.")
+
+# -----------------------------
+# PART 1 - MATCHING
+# -----------------------------
+st.header("🔹 Part 1: Matching Two Excel Files")
 
 uploaded_files = st.file_uploader(
     "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
