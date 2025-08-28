@@ -7,8 +7,8 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Column-Based Matching", layout="wide")
-st.title("📊 King Salman Park - Memory-Safe Matching App")
+st.set_page_config(page_title="King Salman Park - Large Data Matching", layout="wide")
+st.title("📊 King Salman Park - Memory-Safe Large Dataset Matching App")
 
 # -----------------------------
 # Reset / Clear Uploaded Files safely
@@ -112,10 +112,9 @@ if uploaded_files:
                                     startrow = writer.sheets['Sheet1'].max_row
                                     matched_rows.to_excel(writer, index=False, header=False, startrow=startrow)
 
-                        # Update progress every 10 rows
-                        if idx % 10 == 0 or idx == total_rows - 1:
-                            progress_bar.progress((idx+1)/total_rows)
-                            status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
+                        # Update progress every row
+                        progress_bar.progress((idx+1)/total_rows)
+                        status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
 
                     end_time = time.time()
                     st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
