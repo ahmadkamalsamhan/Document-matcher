@@ -7,7 +7,7 @@ import time
 from openpyxl import load_workbook
 
 st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
-st.title("📊 King Salman Park - Document Processing App")
+st.title("📊 King Salman Park - Samhan Document Processing App")
 
 # -----------------------------
 # PART 1 - MATCHING
@@ -132,26 +132,30 @@ if uploaded_files:
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Fixed AND/OR Column-wise)")
+st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR, Case-insensitive)")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
 )
 
 def filter_dataframe_per_column(df, keyword_dict, col_logic="AND"):
+    """
+    Filters a DataFrame column-wise, handling AND/OR across columns, case-insensitive.
+    """
     df_norm = df.copy()
-    for col in keyword_dict.keys():
-        df_norm[col] = df_norm[col].astype(str).str.lower().str.strip()
     col_masks = []
+
     for col, keywords in keyword_dict.items():
+        df_norm[col] = df_norm[col].astype(str).str.lower().str.strip()
         keywords = [k.lower().strip() for k in keywords if k.strip()]
-        # Each column: row matches if any keyword appears in that column
         mask_col = df_norm[col].apply(lambda x: any(k in x for k in keywords))
         col_masks.append(mask_col)
+
     if col_logic.startswith("AND"):
         final_mask = pd.concat(col_masks, axis=1).all(axis=1)
     else:
         final_mask = pd.concat(col_masks, axis=1).any(axis=1)
+
     return df[final_mask]
 
 if uploaded_filter_file:
