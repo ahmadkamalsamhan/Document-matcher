@@ -232,104 +232,64 @@ if uploaded_filter_file:
                                    file_name="filtered_results.xlsx")
             os.remove(tmp_xlsx.name)
 # -----------------------------
-# PART 3 - Merged Matching with Titles Formatted (1 DC Log + 1 Details)
+# PART 3 - Gather Documents from Part 1 Result
 # -----------------------------
-st.header("🔹 Part 3: Merged Matching with Titles Formatted (Memory-Safe)")
+st.header("🔹 Part 3: Gather Documents from Part 1 Result")
 
-# Upload exactly 2 files: DC Log and Details
-dc_file_part3 = st.file_uploader("Upload DC Log file for Part 3", type="xlsx", key="dc_file_part3")
-details_file_part3 = st.file_uploader("Upload Details file for Part 3", type="xlsx", key="details_file_part3")
+# Step 0: Upload Part 1 result
+part1_file = st.file_uploader("Upload Part 1 Result Excel file", type="xlsx", key="part3_file")
 
-if dc_file_part3 and details_file_part3:
-    # Load columns for user selection
-    df1_cols = pd.read_excel(dc_file_part3, nrows=0).columns.tolist()
-    df2_cols = pd.read_excel(details_file_part3, nrows=0).columns.tolist()
+if part1_file:
+    part3_df = pd.read_excel(part1_file)
+    st.success(f"✅ Loaded uploaded file with {len(part3_df)} rows")
 
-    st.subheader("Step 1: Select columns from files")
-    match_col1 = st.selectbox(f"Column to match from {dc_file_part3.name}", df1_cols)
-    match_col2 = st.selectbox(f"Column to match from {details_file_part3.name}", df2_cols)
+    # Step 1: Select key column to group/gather by
+    key_col = st.selectbox("Select column to gather on (e.g., Start Structure)", part3_df.columns)
 
-    st.subheader("Step 2: Select additional columns to include in the result")
-    include_cols1 = st.multiselect(f"Columns from {dc_file_part3.name}", df1_cols)
-    include_cols2 = st.multiselect(f"Columns from {details_file_part3.name}", df2_cols)
+    # Step 2: Select additional columns to include in final result
+    include_cols = st.multiselect("Select additional columns to include in the result", part3_df.columns)
 
-    if st.button("Step 3: Start Merged Matching Part 3"):
-        if not match_col1 or not match_col2:
-            st.warning("⚠️ Please select columns to match.")
+    # Step 3: Start gathering
+    if st.button("Start Part 3 Gathering"):
+        if not key_col:
+            st.warning("⚠️ Please select a key column.")
+        elif not include_cols:
+            st.warning("⚠️ Please select at least one additional column to include in the result.")
         else:
-            st.info("⏳ Matching in progress (memory-safe, like Part 1)...")
-            try:
-                # Load only selected columns
-                df1_small = pd.read_excel(dc_file_part3, usecols=[match_col1]+include_cols1)
-                df2_small = pd.read_excel(details_file_part3, usecols=[match_col2]+include_cols2)
+            st.info("⏳ Gathering in progress (memory-safe)...")
+            import time
+            start_time = time.time()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-                # Normalize function
-                def normalize(text):
-                    if pd.isna(text): return ""
-                    text = str(text).lower()
-                    text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                    text = re.sub(r'\s+', ' ', text).strip()
-                    return text
+            results = []
+            grouped = part3_df.groupby(key_col, dropna=False)
+            total_groups = len(grouped)
 
-                df1_small['norm_title'] = df1_small[match_col1].apply(normalize)
-                df1_small['title_tokens'] = df1_small['norm_title'].str.split()
-                df2_small['norm_mh'] = df2_small[match_col2].apply(normalize)
+            for idx, (group_val, group_df) in enumerate(grouped, 1):
+                merged_row = {key_col: group_val}
+                for col in include_cols:
+                    merged_row[col] = " / ".join(group_df[col].astype(str).unique())
+                results.append(merged_row)
 
-                results = []
-                total_rows = len(df2_small)
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                start_time = time.time()
-                batch_size = 200
-                buffer_rows = []
+                progress_bar.progress(idx / total_groups)
+                status_text.text(f"Processing {idx}/{total_groups} groups ({idx/total_groups*100:.1f}%)")
 
-                # Row-by-row matching
-                for idx, row in df2_small.iterrows():
-                    norm_val = row['norm_mh']
-                    if not norm_val:
-                        continue
-                    row_tokens = set(norm_val.split())
+            final_grouped = pd.DataFrame(results)
+            end_time = time.time()
+            st.success(f"✅ Gathering complete in {end_time - start_time:.2f} seconds")
 
-                    mask = df1_small['title_tokens'].apply(lambda x: row_tokens.issubset(x))
-                    matched_rows = df1_small.loc[mask, include_cols1].copy()
+            # Preview first 100 rows
+            st.subheader("Preview of Gathered Results (first 100 rows)")
+            st.dataframe(final_grouped.head(100))
 
-                    if not matched_rows.empty:
-                        for col in include_cols2:
-                            matched_rows[col] = row[col]
-                        buffer_rows.append(matched_rows)
-
-                    if len(buffer_rows) >= batch_size:
-                        batch_df = pd.concat(buffer_rows, ignore_index=True)
-                        results.append(batch_df)
-                        buffer_rows = []
-
-                    progress_bar.progress((idx+1)/total_rows)
-                    status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
-
-                if buffer_rows:
-                    batch_df = pd.concat(buffer_rows, ignore_index=True)
-                    results.append(batch_df)
-
-                final_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-                end_time = time.time()
-                st.success(f"✅ Part 3 Matching complete in {end_time - start_time:.2f} seconds")
-
-                # Preview first 100 rows
-                st.subheader("Preview of Matched Results (first 100 rows)")
-                st.dataframe(final_df.head(100))
-
-                # Download full results
-                import tempfile, os
-                tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-                final_df.to_excel(tmp_file.name, index=False)
-                with open(tmp_file.name, "rb") as f:
-                    st.download_button("💾 Download Part 3 Results", data=f,
-                                       file_name="matched_merged_titles_formatted.xlsx")
-                os.remove(tmp_file.name)
-
-            except Exception as e:
-                st.error(f"❌ Error during Part 3 matching: {e}")
-
+            # Download full results
+            import tempfile, os
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            final_grouped.to_excel(tmp_file.name, index=False)
+            with open(tmp_file.name, "rb") as f:
+                st.download_button("💾 Download Gathered Results", data=f,
+                                   file_name="part3_gathered_results.xlsx")
+            os.remove(tmp_file.name)
 else:
-    st.info("Please upload **one DC Log file** and **one Details file** to start Part 3.")
-
+    st.info("Please upload the Excel file you got from Part 1 to start Part 3.")
