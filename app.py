@@ -246,8 +246,13 @@ if part1_file:
     # Step 1: Select key column to group/gather by
     key_col = st.selectbox("Select column to gather on (e.g., Start Structure)", part3_df.columns)
 
-    # Step 2: Select additional columns to include in final result
-    include_cols = st.multiselect("Select additional columns to include in the result", part3_df.columns)
+    # Step 2: Automatically select all other columns for result
+    default_cols = [col for col in part3_df.columns if col != key_col]
+    include_cols = st.multiselect(
+        "Select additional columns to include in the result",
+        part3_df.columns,
+        default=default_cols
+    )
 
     # Step 3: Start gathering
     if st.button("Start Part 3 Gathering"):
