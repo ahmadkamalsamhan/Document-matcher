@@ -135,4 +135,49 @@ if uploaded_files:
 # ===============================================================
 # PART 2: Filtering & Search
 # ===============================================================
-st.header("🔹 Part 2: Search
+st.header("🔹 Part 2: Search & Filter Data")
+
+filter_file = st.file_uploader("Upload an Excel file for filtering", type="xlsx", key="filter_file")
+
+if filter_file:
+    df_filter = pd.read_excel(filter_file)
+    st.success(f"✅ File `{filter_file.name}` uploaded with {len(df_filter)} rows.")
+
+    filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
+
+    keyword_dict = {}
+    for col in filter_cols:
+        keywords = st.text_input(f"Keywords for '{col}' (comma-separated)").strip()
+        if keywords:
+            keyword_dict[col] = [k.strip().lower() for k in keywords.split(",") if k.strip()]
+
+    max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
+
+    if st.button("🔍 Apply Filters"):
+        if not keyword_dict:
+            st.warning("⚠️ Please enter at least one keyword.")
+        else:
+            st.info("⏳ Filtering data...")
+            df_result = df_filter.copy()
+            for col, keywords in keyword_dict.items():
+                df_result = df_result[df_result[col].astype(str).str.lower().apply(
+                    lambda x: any(k in x for k in keywords)
+                )]
+
+            if df_result.empty:
+                st.error("❌ No rows matched your filters.")
+            else:
+                st.success(f"✅ Found {len(df_result)} matching rows.")
+                st.dataframe(df_result.head(max_preview))
+
+                csv = df_result.to_csv(index=False).encode("utf-8")
+                st.download_button("💾 Download Filtered Results (CSV)", data=csv, file_name="filtered_results.csv")
+
+                tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+                df_result.to_excel(tmp_xlsx.name, index=False)
+                with open(tmp_xlsx.name, "rb") as f:
+                    st.download_button("💾 Download Filtered Results (XLSX)", data=f,
+                                       file_name="filtered_results.xlsx")
+                os.remove(tmp_xlsx.name)
+else:
+    st.success("✅ No filter file uploaded yet. You can continue normally.")
