@@ -9,9 +9,9 @@ from openpyxl import load_workbook
 st.set_page_config(page_title="King Salman Park - Matching & Search", layout="wide")
 st.title("📊 King Salman Park - Document Processing App")
 
-# =====================================================
-# PART 1 - EXACT MATCHING (Your Colab Logic, Memory-Safe)
-# =====================================================
+# -----------------------------
+# PART 1 - MATCHING
+# -----------------------------
 st.header("🔹 Part 1: Matching Two Excel Files")
 
 keys_to_clear = ["uploaded_files", "tmp_path"]
@@ -129,9 +129,9 @@ if uploaded_files:
     else:
         st.warning("⚠️ Please select at least 2 files for matching.")
 
-# =====================================================
-# PART 2 - SEARCH & FILTER (COLUMN-SPECIFIC + GLOBAL SEARCH)
-# =====================================================
+# -----------------------------
+# PART 2 - SEARCH & FILTER
+# -----------------------------
 st.header("🔹 Part 2: Search & Filter Data (Column-specific + Global Search)")
 
 uploaded_filter_file = st.file_uploader(
@@ -174,25 +174,25 @@ if uploaded_filter_file:
 
         df_result = df_filter.copy()
 
-        # Step 1: Column-specific filtering
+        # Column-specific filtering (fixed AND/OR with normalization)
         if not search_all and keyword_dict:
             if col_logic == "AND (match all columns)":
                 for col, keywords in keyword_dict.items():
-                    norm_keywords = [normalize(k) for k in keywords]
+                    norm_keywords = [normalize(k) for k in keywords if k.strip()]
                     df_result = df_result[df_result[col].astype(str).apply(
-                        lambda x: any(k in normalize(x) for k in norm_keywords)
+                        lambda cell: any(k in normalize(cell) for k in norm_keywords)
                     )]
             else:  # OR logic
                 mask = pd.Series([False]*len(df_result))
                 for col, keywords in keyword_dict.items():
-                    norm_keywords = [normalize(k) for k in keywords]
+                    norm_keywords = [normalize(k) for k in keywords if k.strip()]
                     col_mask = df_result[col].astype(str).apply(
-                        lambda x: any(k in normalize(x) for k in norm_keywords)
+                        lambda cell: any(k in normalize(cell) for k in norm_keywords)
                     )
                     mask = mask | col_mask
                 df_result = df_result[mask]
 
-        # Step 2: Global search across all columns
+        # Global search across all columns
         if search_all and keywords_input.strip():
             keywords = [normalize(k) for k in keywords_input.split(",") if k.strip()]
             df_result = df_result[df_result.apply(
@@ -202,7 +202,7 @@ if uploaded_filter_file:
                 ), axis=1
             )]
 
-        # Step 3: Display results
+        # Display results
         if df_result.empty:
             st.error("❌ No rows matched your filters.")
         else:
