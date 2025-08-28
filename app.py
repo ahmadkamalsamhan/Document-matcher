@@ -19,9 +19,11 @@ if st.button("🗑 Clear Uploaded Files / Reset App"):
         if key in st.session_state:
             del st.session_state[key]
             cleared = True
-    # Only rerun if something was cleared
     if cleared:
-        st.experimental_rerun()
+        st.success("✅ Uploaded files and session cleared. You can start fresh.")
+        st.experimental_rerun()  # restart app after clearing
+    else:
+        st.success("✅ App is already clean. You can continue.")
 
 # -----------------------------
 # Step 0 – Upload Excel Files
