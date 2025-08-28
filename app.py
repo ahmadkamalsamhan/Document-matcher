@@ -7,7 +7,7 @@ import time
 from openpyxl import load_workbook
 
 st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
-st.title("📊 King Salman Park - Document Processing App")
+st.title("📊 Nesma & Partners - Document Processing App ")
 
 # -----------------------------
 # GLOBAL RESET BUTTON
@@ -135,7 +135,7 @@ if uploaded_files:
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR + Global Keywords)")
+st.header("Search & Filter Data")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
@@ -234,7 +234,7 @@ if uploaded_filter_file:
 # -----------------------------
 # PART 3 - Gather Documents from Part 1 Result
 # -----------------------------
-st.header("🔹 Part 3: Gather Documents from Part 1 Result")
+st.header("Gather Documents - Groups")
 
 # Step 0: Upload Part 1 result
 part1_file = st.file_uploader("Upload Part 1 Result Excel file", type="xlsx", key="part3_file")
