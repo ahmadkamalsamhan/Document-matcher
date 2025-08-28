@@ -58,6 +58,14 @@ if uploaded_files:
         include_cols2 = st.multiselect(f"Columns from {selected_files[1].name}", df2_columns)
 
         # -----------------------------
+        # Column warning & dynamic batch size
+        # -----------------------------
+        total_selected = len(include_cols1) + len(include_cols2)
+        if total_selected > 10:
+            st.warning(f"⚠️ You selected {total_selected} columns. This may slow down the app.")
+        batch_size = 200 if total_selected <= 10 else 50
+
+        # -----------------------------
         # Start Matching
         # -----------------------------
         if st.button("Step 3: Start Matching"):
@@ -103,7 +111,6 @@ if uploaded_files:
                     status_text = st.empty()
                     start_time = time.time()
 
-                    batch_size = 200
                     buffer_rows = []
 
                     # -----------------------------
@@ -122,14 +129,13 @@ if uploaded_files:
                                     buffer_rows.append(matched_rows)
 
                                     if len(buffer_rows) >= batch_size:
-                                        # Append batch to Excel
                                         batch_df = pd.concat(buffer_rows, ignore_index=True)
                                         with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
                                             startrow = writer.sheets['Sheet1'].max_row
                                             batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
                                         buffer_rows = []
 
-                        # Update progress every row
+                        # Update progress
                         progress_bar.progress((idx+1)/total_rows)
                         status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
 
