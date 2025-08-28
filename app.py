@@ -4,98 +4,123 @@ import re
 from io import BytesIO
 import time
 
-# -----------------------------
-# Clear previous session state
-# -----------------------------
-for key in ['results', 'final_df']:
-    if key in st.session_state:
-        del st.session_state[key]
-
-st.title('King Salman Park - Nesma & Partners IRE Matching App with Activities')
+st.set_page_config(page_title="King Salman Park Matching App", layout="wide")
+st.title("📊 King Salman Park - Token-Based Matching App")
 
 # -----------------------------
-# Upload files
+# Step 1 – Upload Files
 # -----------------------------
-dc_log_file = st.file_uploader('Upload DC Log Excel file', type='xlsx')
-details_file = st.file_uploader('Upload Details Excel file', type='xlsx')
+uploaded_files = st.file_uploader(
+    "Upload 2 or more Excel files", type="xlsx", accept_multiple_files=True
+)
 
-if st.button('Run Matching'):
-    if dc_log_file is None or details_file is None:
-        st.warning('Please upload both files.')
-    else:
-        # -----------------------------
-        # Read Excel sheets
-        # -----------------------------
-        dc_log = pd.read_excel(dc_log_file, sheet_name='DC Log')
-        details = pd.read_excel(details_file, sheet_name='Details')
+if uploaded_files:
+    st.success(f"{len(uploaded_files)} file(s) uploaded successfully!")
+    
+    # Load all files
+    dataframes = {}
+    for file in uploaded_files:
+        df = pd.read_excel(file)
+        dataframes[file.name] = df
+        st.subheader(f"Preview – {file.name}")
+        st.dataframe(df.head())
 
-        dc_columns = ["DocumentNo.", "Title / Description", "Function", "Discipline",
-                      "Document Revision", "(Final Status)\nOpen or Closed"]
-        details_columns = ["Package", "Phase", "Part", "Managers", "Service", "Line",
-                           "Description", "Start Structure", "End Structure", "MH Type", "Date"]
+    # -----------------------------
+    # Step 2 – Select files & columns for matching
+    # -----------------------------
+    file1_name = st.selectbox("Select File 1", list(dataframes.keys()))
+    file2_name = st.selectbox("Select File 2", list(dataframes.keys()))
 
-        dc_log = dc_log[dc_columns]
-        details = details[details_columns]
+    if file1_name != file2_name:
+        df1, df2 = dataframes[file1_name], dataframes[file2_name]
 
-        # -----------------------------
-        # Normalize text
-        # -----------------------------
-        def normalize(text):
-            if pd.isna(text): return ""
-            text = str(text).lower()
-            text = re.sub(r'[^a-z0-9\s]', ' ', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            return text
-
-        dc_log['norm_title'] = dc_log["Title / Description"].apply(normalize)
-        details['norm_mh'] = details["Start Structure"].apply(normalize)
-        dc_log['title_tokens'] = dc_log['norm_title'].str.split()
+        col1 = st.selectbox(f"Select column from {file1_name}", df1.columns)
+        col2 = st.selectbox(f"Select column from {file2_name}", df2.columns)
 
         # -----------------------------
-        # Matching loop with live progress
+        # Step 3 – Perform Token-Based Matching
         # -----------------------------
-        results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        if st.button("Run Matching"):
+            # Normalize function
+            def normalize(text):
+                if pd.isna(text):
+                    return ""
+                text = str(text).lower()
+                text = re.sub(r'[^a-z0-9\s]', ' ', text)
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text
 
-        total_rows = len(details)
-        for idx, mh_row in enumerate(details.itertuples(index=False), 1):
-            norm_mh = mh_row.norm_mh
-            if norm_mh:
-                mh_tokens = set(norm_mh.split())
-                mask = dc_log['title_tokens'].apply(lambda x: mh_tokens.issubset(set(x)))
-                matched_rows = dc_log.loc[mask, dc_columns].copy()
+            df1['norm_col'] = df1[col1].apply(normalize)
+            df2['norm_col'] = df2[col2].apply(normalize)
+            df1['tokens'] = df1['norm_col'].str.split()
+
+            results = []
+            total_rows = len(df2)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            start_time = time.time()
+
+            for idx, row in enumerate(df2.itertuples(index=False), 1):
+                norm_val = getattr(row, 'norm_col')
+                if not norm_val:
+                    continue
+                tokens = set(norm_val.split())
+                mask = df1['tokens'].apply(lambda x: tokens.issubset(set(x)))
+                matched_rows = df1.loc[mask].copy()
                 if not matched_rows.empty:
-                    for i, col in enumerate(details_columns):
-                        matched_rows[col] = mh_row[i]
+                    # Add all df2 columns
+                    for i, col_name in enumerate(df2.columns):
+                        matched_rows[col_name] = row[i]
                     results.append(matched_rows)
 
-            # Update progress and percentage
-            progress_bar.progress(idx / total_rows)
-            status_text.text(f"Processing row {idx}/{total_rows} ({(idx/total_rows*100):.1f}%)")
-            time.sleep(0.01)  # small pause for UI refresh
+                # Update progress
+                progress_bar.progress(idx / total_rows)
+                status_text.text(f"Processing row {idx}/{total_rows} ({idx/total_rows*100:.1f}%)")
+                time.sleep(0.01)
 
-        # -----------------------------
-        # Combine results and display
-        # -----------------------------
-        final_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-        if not final_df.empty:
-            final_df = final_df[dc_columns + details_columns]
-            final_df = final_df.rename(columns={"(Final Status)\nOpen or Closed":"Final Status"})
+            end_time = time.time()
+            final_df = pd.concat(results, ignore_index=True) if results else pd.DataFrame()
 
-        st.session_state['final_df'] = final_df
+            if not final_df.empty:
+                st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
+                st.dataframe(final_df)
 
-        st.success("Matching complete!")
-        st.dataframe(final_df)
+                # -----------------------------
+                # Step 4 – Optional Filtering
+                # -----------------------------
+                st.subheader("Filter Matched Results (Optional)")
+                filter_col = st.selectbox("Select column to filter", final_df.columns)
+                keywords = st.text_input("Enter keywords (comma-separated)")
 
-        # -----------------------------
-        # Download button
-        # -----------------------------
-        if not final_df.empty:
-            output = BytesIO()
-            final_df.to_excel(output, index=False)
-            st.download_button(
-                label='Download Results',
-                data=output.getvalue(),
-                file_name='matched_results.xlsx'
-            )
+                if keywords:
+                    terms = [k.strip().lower() for k in keywords.split(",")]
+                    filtered_df = final_df[
+                        final_df[filter_col].astype(str).str.lower().apply(
+                            lambda x: any(term in x for term in terms)
+                        )
+                    ]
+                    st.write(f"Filtered rows: {len(filtered_df)}")
+                    st.dataframe(filtered_df)
+
+                # -----------------------------
+                # Step 5 – Download Results
+                # -----------------------------
+                def to_excel(df):
+                    output = BytesIO()
+                    df.to_excel(output, index=False)
+                    return output.getvalue()
+
+                st.download_button(
+                    "💾 Download Full Matched Result",
+                    data=to_excel(final_df),
+                    file_name="matched_results.xlsx"
+                )
+
+                if keywords:
+                    st.download_button(
+                        "💾 Download Filtered Result",
+                        data=to_excel(filtered_df),
+                        file_name="filtered_results.xlsx"
+                    )
+            else:
+                st.warning("⚠️ No matches found.")
