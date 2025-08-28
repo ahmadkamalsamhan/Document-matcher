@@ -6,15 +6,14 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Matching & Search", layout="wide")
+st.set_page_config(page_title="King Salman Park - Matching & Filter", layout="wide")
 st.title("📊 King Salman Park - Document Processing App")
 
 # =====================================================
-# PART 1 - EXACT MATCHING (Your Colab Logic, Memory-Safe)
+# PART 1 - EXACT MATCHING (Colab Logic, Memory-Safe)
 # =====================================================
 st.header("🔹 Part 1: Matching Two Excel Files")
 
-# Reset / Clear Uploaded Files safely
 keys_to_clear = ["uploaded_files", "tmp_path"]
 if st.button("🗑 Clear Uploaded Files / Reset App (Part 1)"):
     cleared = False
@@ -28,7 +27,6 @@ if st.button("🗑 Clear Uploaded Files / Reset App (Part 1)"):
     else:
         st.success("✅ App is already clean. You can continue normally.")
 
-# Upload Excel Files
 uploaded_files = st.file_uploader(
     "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
 )
@@ -39,7 +37,6 @@ if uploaded_files:
     if len(selected_files) >= 2:
         st.success(f"{len(selected_files)} files selected for matching.")
 
-        # Select Columns to Match
         df1_columns = pd.read_excel(selected_files[0], nrows=0).columns.tolist()
         df2_columns = pd.read_excel(selected_files[1], nrows=0).columns.tolist()
 
@@ -47,12 +44,10 @@ if uploaded_files:
         match_col1 = st.selectbox(f"Column from {selected_files[0].name}", df1_columns)
         match_col2 = st.selectbox(f"Column from {selected_files[1].name}", df2_columns)
 
-        # Select Additional Columns to Keep
         st.subheader("Step 2: Select additional columns to include in the result")
         include_cols1 = st.multiselect(f"Columns from {selected_files[0].name}", df1_columns)
         include_cols2 = st.multiselect(f"Columns from {selected_files[1].name}", df2_columns)
 
-        # Start Matching
         if st.button("Step 3: Start Matching"):
             if not match_col1 or not match_col2:
                 st.warning("⚠️ Please select columns to match.")
@@ -61,11 +56,9 @@ if uploaded_files:
             else:
                 st.info("⏳ Matching in progress (exact Colab logic, memory-safe)...")
                 try:
-                    # Load only needed columns
                     df1_small = pd.read_excel(selected_files[0], usecols=[match_col1] + include_cols1)
                     df2_small = pd.read_excel(selected_files[1], usecols=[match_col2] + include_cols2)
 
-                    # Normalize function
                     def normalize(text):
                         if pd.isna(text): return ""
                         text = str(text).lower()
@@ -73,11 +66,9 @@ if uploaded_files:
                         text = re.sub(r'\s+', ' ', text).strip()
                         return text
 
-                    # Prepare token sets like Colab
                     df1_small['token_set'] = df1_small[match_col1].apply(normalize).str.split().apply(set)
                     df2_small['norm_match'] = df2_small[match_col2].apply(normalize)
 
-                    # Temp file for results
                     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                     tmp_path = tmp_file.name
                     tmp_file.close()
@@ -91,19 +82,15 @@ if uploaded_files:
                     batch_size = 200
                     buffer_rows = []
 
-                    # Row-by-row matching (exact Colab logic)
                     for idx, row in df2_small.iterrows():
                         norm_val = row['norm_match']
                         if not norm_val:
                             continue
                         row_tokens = set(norm_val.split())
-
-                        # Exact subset check like Colab
                         mask = df1_small['token_set'].apply(lambda x: row_tokens.issubset(x))
                         matched_rows = df1_small.loc[mask, include_cols1].copy()
 
                         if not matched_rows.empty:
-                            # Assign details columns
                             for col in include_cols2:
                                 matched_rows[col] = row[col]
                             buffer_rows.append(matched_rows)
@@ -116,11 +103,9 @@ if uploaded_files:
                                 batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
                             buffer_rows = []
 
-                        # Update progress
                         progress_bar.progress((idx + 1) / total_rows)
                         status_text.text(f"Processing row {idx + 1}/{total_rows} ({(idx + 1) / total_rows * 100:.1f}%)")
 
-                    # Write remaining rows
                     if buffer_rows:
                         batch_df = pd.concat(buffer_rows, ignore_index=True)
                         with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a',
@@ -131,12 +116,10 @@ if uploaded_files:
                     end_time = time.time()
                     st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
 
-                    # Preview first 100 rows
                     preview_df = pd.read_excel(tmp_path, nrows=100)
                     st.subheader("Preview of Matched Results (first 100 rows)")
                     st.dataframe(preview_df)
 
-                    # Download full results
                     with open(tmp_path, "rb") as f:
                         st.download_button("💾 Download Full Matched Results", data=f,
                                            file_name="matched_results.xlsx")
@@ -162,7 +145,17 @@ if uploaded_filter_file:
     df_filter = pd.read_excel(uploaded_filter_file)
     st.success(f"✅ File {uploaded_filter_file.name} uploaded with {len(df_filter)} rows.")
 
-    filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
+    # Column-based filtering
+    filter_cols = st.multiselect("Select columns to apply keyword filters", df_filter.columns.tolist())
+
+    # Global search input
+    global_search = st.text_input("Global search (all columns, comma-separated)")
+
+    # Dropdown filter for a specific column
+    dropdown_col = st.selectbox("Pick a column for dropdown filter", [None] + df_filter.columns.tolist())
+    dropdown_values = []
+    if dropdown_col:
+        dropdown_values = st.multiselect(f"Select values from '{dropdown_col}'", sorted(df_filter[dropdown_col].dropna().unique()))
 
     keyword_dict = {}
     for col in filter_cols:
@@ -173,39 +166,48 @@ if uploaded_filter_file:
     max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
 
     if st.button("🔍 Apply Filters"):
-        if not keyword_dict:
-            st.warning("⚠️ Please enter at least one keyword.")
+        st.info("⏳ Filtering data...")
+        def normalize(text):
+            if pd.isna(text): return ""
+            text = str(text).lower()
+            text = re.sub(r'[^a-z0-9\s]', ' ', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            return text
+
+        df_result = df_filter.copy()
+
+        # Column-based filters
+        for col, keywords in keyword_dict.items():
+            norm_keywords = [normalize(k) for k in keywords]
+            df_result = df_result[df_result[col].astype(str).apply(
+                lambda x: any(k in normalize(x) for k in norm_keywords)
+            )]
+
+        # Global search filter
+        if global_search.strip():
+            global_keywords = [normalize(k) for k in global_search.split(",") if k.strip()]
+            df_result = df_result[df_result.apply(
+                lambda row: any(global_kw in normalize(str(cell)) for cell in row for global_kw in global_keywords), axis=1
+            )]
+
+        # Dropdown filter
+        if dropdown_col and dropdown_values:
+            norm_values = [normalize(v) for v in dropdown_values]
+            df_result = df_result[df_result[dropdown_col].astype(str).apply(lambda x: normalize(x) in norm_values)]
+
+        if df_result.empty:
+            st.error("❌ No rows matched your filters.")
         else:
-            st.info("⏳ Filtering data...")
+            st.success(f"✅ Found {len(df_result)} matching rows.")
+            st.dataframe(df_result.head(max_preview))
 
-            # Normalization (same as Part 1)
-            def normalize(text):
-                if pd.isna(text): return ""
-                text = str(text).lower()
-                text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                text = re.sub(r'\s+', ' ', text).strip()
-                return text
+            csv = df_result.to_csv(index=False).encode("utf-8")
+            st.download_button("💾 Download Filtered Results (CSV)", data=csv, file_name="filtered_results.csv")
 
-            df_result = df_filter.copy()
-            for col, keywords in keyword_dict.items():
-                norm_keywords = [normalize(k) for k in keywords]
-                df_result = df_result[df_result[col].astype(str).apply(
-                    lambda x: any(k in normalize(x) for k in norm_keywords)
-                )]
-
-            if df_result.empty:
-                st.error("❌ No rows matched your filters.")
-            else:
-                st.success(f"✅ Found {len(df_result)} matching rows.")
-                st.dataframe(df_result.head(max_preview))
-
-                csv = df_result.to_csv(index=False).encode("utf-8")
-                st.download_button("💾 Download Filtered Results (CSV)", data=csv,
-                                   file_name="filtered_results.csv")
-
-                tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-                df_result.to_excel(tmp_xlsx.name, index=False)
-                with open(tmp_xlsx.name, "rb") as f:
-                    st.download_button("💾 Download Filtered Results (XLSX)", data=f,
-                                       file_name="filtered_results.xlsx")
-                os.remove(tmp_xlsx.name)
+            tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            df_result.to_excel(tmp_xlsx.name, index=False)
+            with open(tmp_xlsx.name, "rb") as f:
+                st.download_button("💾 Download Filtered Results (XLSX)", data=f, file_name="filtered_results.xlsx")
+            os.remove(tmp_xlsx.name)
+else:
+    st.success("✅ No filter file uploaded yet. You can continue normally.")
