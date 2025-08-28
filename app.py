@@ -10,14 +10,18 @@ st.set_page_config(page_title="King Salman Park - Column-Based Matching", layout
 st.title("📊 King Salman Park - Memory-Safe Matching App")
 
 # -----------------------------
-# Reset / Clear Uploaded Files
+# Reset / Clear Uploaded Files safely
 # -----------------------------
 if st.button("🗑 Clear Uploaded Files / Reset App"):
-    # Clear uploaded files
-    for key in ["uploaded_files", "df1_small", "df2_small", "tmp_path"]:
+    keys_to_clear = ["uploaded_files", "df1_small", "df2_small", "tmp_path"]
+    cleared = False
+    for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
-    st.experimental_rerun()
+            cleared = True
+    # Only rerun if something was cleared
+    if cleared:
+        st.experimental_rerun()
 
 # -----------------------------
 # Step 0 – Upload Excel Files
