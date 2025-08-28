@@ -7,13 +7,13 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Colab Matching", layout="wide")
-st.title("📊 King Salman Park - Colab-like Memory-Safe Matching App")
+st.set_page_config(page_title="King Salman Park - Optimized Matching", layout="wide")
+st.title("📊 King Salman Park - Optimized Batch Matching App")
 
 # -----------------------------
 # Reset / Clear Uploaded Files safely
 # -----------------------------
-keys_to_clear = ["uploaded_files", "tmp_path"]
+keys_to_clear = ["uploaded_files", "df1_small", "df2_small", "tmp_path"]
 
 if st.button("🗑 Clear Uploaded Files / Reset App"):
     cleared = False
@@ -46,7 +46,7 @@ if uploaded_files:
         df1_columns = pd.read_excel(selected_files[0], nrows=0).columns.tolist()
         df2_columns = pd.read_excel(selected_files[1], nrows=0).columns.tolist()
 
-        st.subheader("Step 1: Select columns to match")
+        st.subheader("Step 1: Select column to match")
         match_col1 = st.selectbox(f"Column from {selected_files[0].name}", df1_columns)
         match_col2 = st.selectbox(f"Column from {selected_files[1].name}", df2_columns)
 
@@ -66,7 +66,7 @@ if uploaded_files:
             elif not include_cols1 and not include_cols2:
                 st.warning("⚠️ Please select at least one additional column to include in the result.")
             else:
-                st.info("⏳ Matching in progress (Colab-style memory-safe)...")
+                st.info("⏳ Matching in progress (optimized memory + batch writing)...")
                 try:
                     # Load only necessary columns
                     df1_small = pd.read_excel(selected_files[0], usecols=[match_col1]+include_cols1)
@@ -80,11 +80,11 @@ if uploaded_files:
                         text = re.sub(r'\s+', ' ', text).strip()
                         return text
 
-                    # Precompute token sets for df1
+                    # Precompute token sets
                     df1_small['token_set'] = df1_small[match_col1].apply(normalize).str.split().apply(set)
                     df2_small['norm_match'] = df2_small[match_col2].apply(normalize)
 
-                    # Build token -> row index map for fast lookup
+                    # Build token → row index map for fast lookup
                     token_map = defaultdict(set)
                     for idx, tokens in df1_small['token_set'].items():
                         for t in tokens:
@@ -107,7 +107,7 @@ if uploaded_files:
                     buffer_rows = []
 
                     # -----------------------------
-                    # Memory & CPU-safe batch matching loop
+                    # Optimized batch matching loop
                     # -----------------------------
                     for idx, row in df2_small.iterrows():
                         mh_tokens = set(row['norm_match'].split())
@@ -122,6 +122,7 @@ if uploaded_files:
                                     buffer_rows.append(matched_rows)
 
                                     if len(buffer_rows) >= batch_size:
+                                        # Append batch to Excel
                                         batch_df = pd.concat(buffer_rows, ignore_index=True)
                                         with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
                                             startrow = writer.sheets['Sheet1'].max_row
