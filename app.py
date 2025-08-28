@@ -28,7 +28,7 @@ if st.button("🗑 Clear/Reset Entire App"):
 # -----------------------------
 # PART 1 - MATCHING
 # -----------------------------
-st.header("🔹 Part 1: Matching Two Excel Files")
+st.header("Matching Two Excel Files")
 
 uploaded_files = st.file_uploader(
     "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
