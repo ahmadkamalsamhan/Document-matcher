@@ -7,7 +7,7 @@ import time
 from openpyxl import load_workbook
 
 st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
-st.title("📊 King Salman Park - Samhan Document Processing App")
+st.title("📊 King Salman Park - Document Processing App")
 
 # -----------------------------
 # PART 1 - MATCHING
@@ -132,29 +132,30 @@ if uploaded_files:
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR, Case-insensitive)")
+st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR, Partial Match)")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
 )
 
-def filter_dataframe_per_column(df, keyword_dict, col_logic="AND"):
+def filter_dataframe_columnwise_partial(df, column_keywords, logic="AND"):
     """
-    Filters a DataFrame column-wise, handling AND/OR across columns, case-insensitive.
+    Filters DataFrame column-wise, partial match, case-insensitive.
     """
-    df_norm = df.copy()
-    col_masks = []
+    masks = []
 
-    for col, keywords in keyword_dict.items():
-        df_norm[col] = df_norm[col].astype(str).str.lower().str.strip()
-        keywords = [k.lower().strip() for k in keywords if k.strip()]
-        mask_col = df_norm[col].apply(lambda x: any(k in x for k in keywords))
-        col_masks.append(mask_col)
+    for col, keywords in column_keywords.items():
+        col_series = df[col].astype(str).str.lower()
+        keyword_masks = [col_series.str.contains(k.lower().strip(), regex=False, na=False) for k in keywords]
+        if keyword_masks:
+            masks.append(pd.concat(keyword_masks, axis=1).any(axis=1))
+        else:
+            masks.append(pd.Series([True]*len(df), index=df.index))
 
-    if col_logic.startswith("AND"):
-        final_mask = pd.concat(col_masks, axis=1).all(axis=1)
+    if logic.upper() == "AND":
+        final_mask = pd.concat(masks, axis=1).all(axis=1)
     else:
-        final_mask = pd.concat(col_masks, axis=1).any(axis=1)
+        final_mask = pd.concat(masks, axis=1).any(axis=1)
 
     return df[final_mask]
 
@@ -164,18 +165,22 @@ if uploaded_filter_file:
 
     search_all = st.checkbox("🔎 Search across all columns (ignore column selection)")
 
-    keyword_dict = {}
+    column_keywords = {}
+    col_logic = "AND"
+    keywords_input = ""
+
     if not search_all:
         filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
         for col in filter_cols:
             keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
             if keywords:
-                keyword_dict[col] = [k.strip() for k in keywords.split(",") if k.strip()]
+                column_keywords[col] = [k.strip() for k in keywords.split(",") if k.strip()]
         col_logic = st.radio(
             "Select cross-column logic for multiple columns",
             options=["AND (match all columns)", "OR (match any column)"],
             index=0
         )
+        col_logic = "AND" if col_logic.startswith("AND") else "OR"
     else:
         keywords_input = st.text_input(
             "Enter keywords to search across all columns (comma-separated)"
@@ -186,8 +191,8 @@ if uploaded_filter_file:
     if st.button("🔍 Apply Filter"):
         df_result = df_filter.copy()
 
-        if not search_all and keyword_dict:
-            df_result = filter_dataframe_per_column(df_result, keyword_dict, col_logic)
+        if not search_all and column_keywords:
+            df_result = filter_dataframe_columnwise_partial(df_result, column_keywords, col_logic)
 
         elif search_all and keywords_input.strip():
             keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
