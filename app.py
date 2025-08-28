@@ -174,13 +174,14 @@ if uploaded_filter_file:
 
         df_result = df_filter.copy()
 
-        # Column-specific filtering (fixed AND/OR with normalization)
+        # Column-specific filtering (fixed AND/OR with per-column keywords)
         if not search_all and keyword_dict:
-            if col_logic == "AND (match all columns)":
+            if col_logic.startswith("AND"):
+                # AND: all selected columns must match their own keywords
                 for col, keywords in keyword_dict.items():
                     norm_keywords = [normalize(k) for k in keywords if k.strip()]
                     df_result = df_result[df_result[col].astype(str).apply(
-                        lambda cell: any(k in normalize(cell) for k in norm_keywords)
+                        lambda cell: all(k in normalize(cell) for k in norm_keywords)
                     )]
             else:  # OR logic
                 mask = pd.Series([False]*len(df_result))
