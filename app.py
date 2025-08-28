@@ -165,45 +165,39 @@ if uploaded_filter_file:
     max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
 
     if st.button("🔍 Apply Filter"):
-        def normalize(text):
-            if pd.isna(text): return ""
-            text = str(text).lower()
-            text = re.sub(r'[^a-z0-9\s]', ' ', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            return text
-
         df_result = df_filter.copy()
 
-        # Column-specific filtering (fixed AND/OR with per-column keywords)
+        # -----------------------------
+        # Strict per-column AND/OR
+        # -----------------------------
         if not search_all and keyword_dict:
             if col_logic.startswith("AND"):
-                # AND: all selected columns must match their own keywords
                 for col, keywords in keyword_dict.items():
-                    norm_keywords = [normalize(k) for k in keywords if k.strip()]
                     df_result = df_result[df_result[col].astype(str).apply(
-                        lambda cell: all(k in normalize(cell) for k in norm_keywords)
+                        lambda cell: all(k.lower().strip() in str(cell).lower() for k in keywords)
                     )]
-            else:  # OR logic
+            else:  # OR
                 mask = pd.Series([False]*len(df_result))
                 for col, keywords in keyword_dict.items():
-                    norm_keywords = [normalize(k) for k in keywords if k.strip()]
                     col_mask = df_result[col].astype(str).apply(
-                        lambda cell: any(k in normalize(cell) for k in norm_keywords)
+                        lambda cell: any(k.lower().strip() in str(cell).lower() for k in keywords)
                     )
                     mask = mask | col_mask
                 df_result = df_result[mask]
 
+        # -----------------------------
         # Global search across all columns
+        # -----------------------------
         if search_all and keywords_input.strip():
-            keywords = [normalize(k) for k in keywords_input.split(",") if k.strip()]
+            keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
             df_result = df_result[df_result.apply(
-                lambda row: any(
-                    any(k in normalize(str(cell)) for k in keywords)
-                    for cell in row
-                ), axis=1
+                lambda row: all(any(k in str(cell).lower() for cell in row) for k in keywords),
+                axis=1
             )]
 
+        # -----------------------------
         # Display results
+        # -----------------------------
         if df_result.empty:
             st.error("❌ No rows matched your filters.")
         else:
