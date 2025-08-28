@@ -10,10 +10,20 @@ st.set_page_config(page_title="King Salman Park - Column-Based Matching", layout
 st.title("📊 King Salman Park - Memory-Safe Matching App")
 
 # -----------------------------
+# Reset / Clear Uploaded Files
+# -----------------------------
+if st.button("🗑 Clear Uploaded Files / Reset App"):
+    # Clear uploaded files
+    for key in ["uploaded_files", "df1_small", "df2_small", "tmp_path"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.experimental_rerun()
+
+# -----------------------------
 # Step 0 – Upload Excel Files
 # -----------------------------
 uploaded_files = st.file_uploader(
-    "Upload Excel files", type="xlsx", accept_multiple_files=True
+    "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
 )
 
 if uploaded_files:
@@ -114,6 +124,11 @@ if uploaded_files:
 
                     # Remove temp file
                     os.remove(tmp_path)
+
+                    # Clear intermediate DataFrames from session state
+                    for key in ["df1_small", "df2_small", "tmp_path"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
 
                 except Exception as e:
                     st.error(f"❌ Error during matching: {e}")
