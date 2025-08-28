@@ -172,10 +172,13 @@ if uploaded_filter_file:
         # -----------------------------
         if not search_all and keyword_dict:
             if col_logic.startswith("AND"):
+                mask = pd.Series(True, index=df_result.index)
                 for col, keywords in keyword_dict.items():
-                    df_result = df_result[df_result[col].astype(str).apply(
-                        lambda cell: all(k.lower().strip() in str(cell).lower() for k in keywords)
-                    )]
+                    col_mask = df_result[col].astype(str).apply(
+                        lambda cell: any(k.lower().strip() in str(cell).lower() for k in keywords)
+                    )
+                    mask = mask & col_mask
+                df_result = df_result[mask]
             else:  # OR
                 mask = pd.Series([False]*len(df_result))
                 for col, keywords in keyword_dict.items():
