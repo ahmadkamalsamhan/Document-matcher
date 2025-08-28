@@ -6,7 +6,7 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Matching & Search", layout="wide")
+st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
 st.title("📊 King Salman Park - Document Processing App")
 
 # -----------------------------
@@ -130,22 +130,23 @@ if uploaded_files:
         st.warning("⚠️ Please select at least 2 files for matching.")
 
 # -----------------------------
-# PART 2 - SEARCH & FILTER (Fully Fixed AND/OR)
+# PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Optimized + Fixed AND/OR)")
+st.header("🔹 Part 2: Search & Filter Data (Fixed AND/OR Column-wise)")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
 )
 
-def filter_dataframe(df, keyword_dict, col_logic="AND"):
+def filter_dataframe_per_column(df, keyword_dict, col_logic="AND"):
     df_norm = df.copy()
     for col in keyword_dict.keys():
         df_norm[col] = df_norm[col].astype(str).str.lower().str.strip()
     col_masks = []
     for col, keywords in keyword_dict.items():
         keywords = [k.lower().strip() for k in keywords if k.strip()]
-        mask_col = df_norm[col].apply(lambda x: all(k in x for k in keywords))
+        # Each column: row matches if any keyword appears in that column
+        mask_col = df_norm[col].apply(lambda x: any(k in x for k in keywords))
         col_masks.append(mask_col)
     if col_logic.startswith("AND"):
         final_mask = pd.concat(col_masks, axis=1).all(axis=1)
@@ -182,7 +183,7 @@ if uploaded_filter_file:
         df_result = df_filter.copy()
 
         if not search_all and keyword_dict:
-            df_result = filter_dataframe(df_result, keyword_dict, col_logic)
+            df_result = filter_dataframe_per_column(df_result, keyword_dict, col_logic)
 
         elif search_all and keywords_input.strip():
             keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
