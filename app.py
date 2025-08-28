@@ -5,6 +5,7 @@ from io import BytesIO
 import tempfile
 import os
 import time
+from openpyxl import load_workbook
 
 st.set_page_config(page_title="King Salman Park - Column-Based Matching", layout="wide")
 st.title("📊 King Salman Park - Memory-Safe Matching App")
@@ -82,39 +83,39 @@ if uploaded_files:
                     df1_small['token_set'] = df1_small[match_col1].apply(normalize).str.split().apply(set)
                     df2_small['norm_match'] = df2_small[match_col2].apply(normalize)
 
-                    # Temp file to store results
+                    # Temp file for results
                     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                     tmp_path = tmp_file.name
                     tmp_file.close()
+
+                    # Create empty Excel with header
+                    pd.DataFrame(columns=include_cols1+include_cols2).to_excel(tmp_path, index=False)
 
                     total_rows = len(df2_small)
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     start_time = time.time()
-                    row_counter = 0
-                    first_chunk = True
 
                     # -----------------------------
                     # Memory-safe matching loop
                     # -----------------------------
-                    with pd.ExcelWriter(tmp_path, engine='openpyxl') as writer:
-                        for idx, row in df2_small.iterrows():
-                            mh_tokens = set(row['norm_match'].split())
-                            if mh_tokens:
-                                mask = df1_small['token_set'].apply(lambda x: mh_tokens.issubset(x))
-                                matched_rows = df1_small.loc[mask, include_cols1].copy()
-                                if not matched_rows.empty:
-                                    for col in include_cols2:
-                                        matched_rows[col] = row[col]
-                                    matched_rows.to_excel(writer, index=False, header=first_chunk,
-                                                          startrow=row_counter)
-                                    row_counter += len(matched_rows)
-                                    first_chunk = False
+                    for idx, row in df2_small.iterrows():
+                        mh_tokens = set(row['norm_match'].split())
+                        if mh_tokens:
+                            mask = df1_small['token_set'].apply(lambda x: mh_tokens.issubset(x))
+                            matched_rows = df1_small.loc[mask, include_cols1].copy()
+                            if not matched_rows.empty:
+                                for col in include_cols2:
+                                    matched_rows[col] = row[col]
+                                # Append to Excel
+                                with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+                                    startrow = writer.sheets['Sheet1'].max_row
+                                    matched_rows.to_excel(writer, index=False, header=False, startrow=startrow)
 
-                            # Update progress every 10 rows
-                            if idx % 10 == 0 or idx == total_rows - 1:
-                                progress_bar.progress((idx+1)/total_rows)
-                                status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
+                        # Update progress every 10 rows
+                        if idx % 10 == 0 or idx == total_rows - 1:
+                            progress_bar.progress((idx+1)/total_rows)
+                            status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
 
                     end_time = time.time()
                     st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
@@ -132,12 +133,8 @@ if uploaded_files:
                     # Remove temp file
                     os.remove(tmp_path)
 
-                    # Clear intermediate DataFrames from session state
-                    for key in ["df1_small", "df2_small", "tmp_path"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-
                 except Exception as e:
                     st.error(f"❌ Error during matching: {e}")
+
     else:
         st.warning("⚠️ Please select at least 2 files for matching.")
