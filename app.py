@@ -7,7 +7,7 @@ import os
 import time
 
 st.set_page_config(page_title="King Salman Park - Column-Based Matching", layout="wide")
-st.title("📊 King Salman Park - Column-Based Memory-Safe Matching")
+st.title("📊 King Salman Park - Memory-Safe Matching App")
 
 # -----------------------------
 # Step 0 – Upload Excel Files
@@ -69,7 +69,6 @@ if uploaded_files:
                     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                     tmp_path = tmp_file.name
                     tmp_file.close()
-                    writer = pd.ExcelWriter(tmp_path, engine='openpyxl')
 
                     total_rows = len(df2_small)
                     progress_bar = st.progress(0)
@@ -78,35 +77,42 @@ if uploaded_files:
                     row_counter = 0
                     first_chunk = True
 
-                    # Matching loop
-                    for idx, row in df2_small.iterrows():
-                        mh_tokens = set(row['norm_match'].split())
-                        if mh_tokens:
-                            mask = df1_small['token_set'].apply(lambda x: mh_tokens.issubset(x))
-                            matched_rows = df1_small.loc[mask, include_cols1].copy()
-                            if not matched_rows.empty:
-                                for col in include_cols2:
-                                    matched_rows[col] = row[col]
-                                matched_rows.to_excel(writer, index=False, header=first_chunk,
-                                                      startrow=row_counter)
-                                row_counter += len(matched_rows)
-                                first_chunk = False
+                    # -----------------------------
+                    # Memory-safe matching loop
+                    # -----------------------------
+                    with pd.ExcelWriter(tmp_path, engine='openpyxl') as writer:
+                        for idx, row in df2_small.iterrows():
+                            mh_tokens = set(row['norm_match'].split())
+                            if mh_tokens:
+                                mask = df1_small['token_set'].apply(lambda x: mh_tokens.issubset(x))
+                                matched_rows = df1_small.loc[mask, include_cols1].copy()
+                                if not matched_rows.empty:
+                                    for col in include_cols2:
+                                        matched_rows[col] = row[col]
+                                    matched_rows.to_excel(writer, index=False, header=first_chunk,
+                                                          startrow=row_counter)
+                                    row_counter += len(matched_rows)
+                                    first_chunk = False
 
-                        if idx % 10 == 0 or idx == total_rows - 1:
-                            progress_bar.progress((idx+1)/total_rows)
-                            status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
+                            # Update progress every 10 rows
+                            if idx % 10 == 0 or idx == total_rows - 1:
+                                progress_bar.progress((idx+1)/total_rows)
+                                status_text.text(f"Processing row {idx+1}/{total_rows} ({(idx+1)/total_rows*100:.1f}%)")
 
-                    writer.save()
                     end_time = time.time()
-
                     st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
+
+                    # Preview first 100 rows
                     preview_df = pd.read_excel(tmp_path, nrows=100)
                     st.subheader("Preview of Matched Results (first 100 rows)")
                     st.dataframe(preview_df)
 
+                    # Download full results
                     with open(tmp_path, "rb") as f:
                         st.download_button("💾 Download Full Matched Results", data=f,
                                            file_name="matched_results.xlsx")
+
+                    # Remove temp file
                     os.remove(tmp_path)
 
                 except Exception as e:
