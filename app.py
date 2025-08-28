@@ -6,7 +6,7 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
+st.set_page_config(page_title="📊 Nesma & Partners - Document Processing App", layout="wide")
 st.title("📊 Nesma & Partners - Document Processing App ")
 
 # -----------------------------
@@ -297,4 +297,4 @@ if part1_file:
                                    file_name="part3_gathered_results.xlsx")
             os.remove(tmp_file.name)
 else:
-    st.info("Please upload the Excel file you got from Part 1 to start Part 3.")
+    st.info("If needed Please upload the Excel file you got from Part 1 to start Part 3.")
