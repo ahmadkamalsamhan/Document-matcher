@@ -231,3 +231,109 @@ if uploaded_filter_file:
                 st.download_button("💾 Download Filtered Results (XLSX)", data=f,
                                    file_name="filtered_results.xlsx")
             os.remove(tmp_xlsx.name)
+# -----------------------------
+# PART 3 - SEMANTIC MATCHING WITH ACTIVITIES
+# -----------------------------
+st.header("🔹 Part 3: Semantic Matching - Activities (Sentence Transformer)")
+
+uploaded_part3_dc = st.file_uploader("Upload DC Log Excel file for Part 3", type="xlsx", key="part3_dc")
+uploaded_part3_details = st.file_uploader("Upload Details Excel file for Part 3", type="xlsx", key="part3_details")
+
+if uploaded_part3_dc and uploaded_part3_details:
+    st.subheader("Select columns for Part 3")
+    part3_dc_cols = pd.read_excel(uploaded_part3_dc, nrows=0).columns.tolist()
+    part3_details_cols = pd.read_excel(uploaded_part3_details, nrows=0).columns.tolist()
+
+    dc_doc_col = st.selectbox("Document Title column from DC Log", part3_dc_cols, index=1)  # default to "Title / Description"
+    dc_number_col = st.selectbox("Document Number column from DC Log", part3_dc_cols, index=0)
+    dc_status_col = st.selectbox("Status column from DC Log", part3_dc_cols, index=5)
+    dc_function_col = st.selectbox("Function column from DC Log", part3_dc_cols, index=2)
+    dc_discipline_col = st.selectbox("Discipline column from DC Log", part3_dc_cols, index=3)
+
+    details_mh_col = st.selectbox("Start Structure column from Details", part3_details_cols, index=0)
+
+    if st.button("Start Part 3 Matching"):
+        st.info("⏳ Loading model and performing semantic matching... This may take time for large files.")
+        try:
+            import numpy as np
+            from sentence_transformers import SentenceTransformer, util
+            import time
+            import tempfile
+
+            # Load data
+            dc_df = pd.read_excel(uploaded_part3_dc)
+            details_df = pd.read_excel(uploaded_part3_details)
+
+            # Load model
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+
+            # Encode document titles
+            doc_titles = dc_df[dc_doc_col].astype(str).tolist()
+            doc_embeddings = model.encode(doc_titles, convert_to_tensor=True, show_progress_bar=True)
+
+            # Define activities + synonyms
+            activities = {
+                "Excavation WIR": ["excavation", "excavating", "trenching", "digging"],
+                "FDT WIR": ["fdt", "f.d.t", "field density test", "compaction test"],
+                "Base WIR": ["blinding", "base concrete", "foundation base"],
+                "Rings and Cover WIR": ["rings", "cover slab", "precast ring", "manhole cover"],
+                "Cover WIR": ["cover", "slab cover"],
+                "Backfilling WIR": ["backfilling", "backfill", "refilling"]
+            }
+
+            # Precompute embeddings
+            activity_embeddings = {act: model.encode(keys, convert_to_tensor=True) for act, keys in activities.items()}
+
+            results = []
+            threshold = 0.70
+            total_mh = len(details_df)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            start_time = time.time()
+
+            for idx, mh_row in details_df.iterrows():
+                mh = str(mh_row[details_mh_col])
+                for act, act_emb in activity_embeddings.items():
+                    sim = util.cos_sim(act_emb, doc_embeddings).cpu().numpy()
+                    max_sim = np.max(sim, axis=0)
+                    idxs = np.where(max_sim >= threshold)[0]
+                    if len(idxs) > 0:
+                        docs = dc_df.iloc[idxs]
+                        results.append({
+                            "Start Structure": mh,
+                            "Activity": act,
+                            "DocumentNo.": " / ".join(docs[dc_number_col].astype(str).tolist()),
+                            "Title / Description": " / ".join(docs[dc_doc_col].astype(str).tolist()),
+                            "Status": " / ".join(docs[dc_status_col].astype(str).tolist()),
+                            "Function": " / ".join(docs[dc_function_col].astype(str).tolist()),
+                            "Discipline": " / ".join(docs[dc_discipline_col].astype(str).tolist())
+                        })
+                    else:
+                        results.append({
+                            "Start Structure": mh,
+                            "Activity": act,
+                            "DocumentNo.": "Not Found",
+                            "Title / Description": "Not Found",
+                            "Status": "Not Found",
+                            "Function": "Not Found",
+                            "Discipline": "Not Found"
+                        })
+                progress_bar.progress((idx+1)/total_mh)
+                status_text.text(f"Processing Start Structure {idx+1}/{total_mh} ({(idx+1)/total_mh*100:.1f}%)")
+
+            final_df = pd.DataFrame(results)
+            end_time = time.time()
+            st.success(f"✅ Part 3 Matching completed in {end_time-start_time:.2f} seconds")
+
+            st.subheader("Preview first 100 rows")
+            st.dataframe(final_df.head(100))
+
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            final_df.to_excel(tmp_file.name, index=False)
+            with open(tmp_file.name, "rb") as f:
+                st.download_button("💾 Download Part 3 Results (XLSX)", data=f,
+                                   file_name="activities_matched_merged.xlsx")
+            os.remove(tmp_file.name)
+
+        except Exception as e:
+            st.error(f"❌ Error in Part 3: {e}")
