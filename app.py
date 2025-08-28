@@ -4,7 +4,7 @@ import re
 from io import BytesIO
 import time
 
-st.set_page_config(page_title="King Salman Park Matching App", layout="wide")
+st.set_page_config(page_title="Token-Based Matching App", layout="wide")
 st.title("📊 King Salman Park - Token-Based Matching App")
 
 # -----------------------------
@@ -16,8 +16,8 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
     st.success(f"{len(uploaded_files)} file(s) uploaded successfully!")
-    
-    # Load all files
+
+    # Load files into a dictionary
     dataframes = {}
     for file in uploaded_files:
         df = pd.read_excel(file)
@@ -26,22 +26,24 @@ if uploaded_files:
         st.dataframe(df.head())
 
     # -----------------------------
-    # Step 2 – Select files & columns for matching
+    # Step 2 – Select columns for matching
     # -----------------------------
+    st.subheader("Select Columns for Matching")
     file1_name = st.selectbox("Select File 1", list(dataframes.keys()))
     file2_name = st.selectbox("Select File 2", list(dataframes.keys()))
 
     if file1_name != file2_name:
         df1, df2 = dataframes[file1_name], dataframes[file2_name]
 
-        col1 = st.selectbox(f"Select column from {file1_name}", df1.columns)
-        col2 = st.selectbox(f"Select column from {file2_name}", df2.columns)
+        cols1 = st.multiselect(f"Select one or more columns from {file1_name}", df1.columns)
+        cols2 = st.multiselect(f"Select one or more columns from {file2_name}", df2.columns)
 
-        # -----------------------------
-        # Step 3 – Perform Token-Based Matching
-        # -----------------------------
-        if st.button("Run Matching"):
-            # Normalize function
+        if cols1 and cols2 and st.button("Run Matching"):
+            st.info("⏳ Matching in progress...")
+
+            # -----------------------------
+            # Step 3 – Token-Based Matching for multiple columns
+            # -----------------------------
             def normalize(text):
                 if pd.isna(text):
                     return ""
@@ -50,9 +52,13 @@ if uploaded_files:
                 text = re.sub(r'\s+', ' ', text).strip()
                 return text
 
-            df1['norm_col'] = df1[col1].apply(normalize)
-            df2['norm_col'] = df2[col2].apply(normalize)
-            df1['tokens'] = df1['norm_col'].str.split()
+            # Normalize all selected columns
+            for col in cols1:
+                df1[f"norm_{col}"] = df1[col].apply(normalize)
+                df1[f"tokens_{col}"] = df1[f"norm_{col}"].str.split()
+
+            for col in cols2:
+                df2[f"norm_{col}"] = df2[col].apply(normalize)
 
             results = []
             total_rows = len(df2)
@@ -60,18 +66,25 @@ if uploaded_files:
             status_text = st.empty()
             start_time = time.time()
 
+            # Iterate over df2 rows
             for idx, row in enumerate(df2.itertuples(index=False), 1):
-                norm_val = getattr(row, 'norm_col')
-                if not norm_val:
-                    continue
-                tokens = set(norm_val.split())
-                mask = df1['tokens'].apply(lambda x: tokens.issubset(set(x)))
-                matched_rows = df1.loc[mask].copy()
-                if not matched_rows.empty:
-                    # Add all df2 columns
-                    for i, col_name in enumerate(df2.columns):
-                        matched_rows[col_name] = row[i]
-                    results.append(matched_rows)
+                row_matches = pd.DataFrame()
+
+                # Check all combinations of selected columns
+                for col1 in cols1:
+                    for col2 in cols2:
+                        tokens = set(getattr(row, f"norm_{col2}").split())
+                        if not tokens:
+                            continue
+                        mask = df1[f"tokens_{col1}"].apply(lambda x: tokens.issubset(set(x)))
+                        matched_rows = df1.loc[mask].copy()
+                        if not matched_rows.empty:
+                            for i, c in enumerate(df2.columns):
+                                matched_rows[c] = row[i]
+                            row_matches = pd.concat([row_matches, matched_rows], ignore_index=True)
+
+                if not row_matches.empty:
+                    results.append(row_matches)
 
                 # Update progress
                 progress_bar.progress(idx / total_rows)
@@ -93,14 +106,15 @@ if uploaded_files:
                 keywords = st.text_input("Enter keywords (comma-separated)")
 
                 if keywords:
-                    terms = [k.strip().lower() for k in keywords.split(",")]
-                    filtered_df = final_df[
-                        final_df[filter_col].astype(str).str.lower().apply(
-                            lambda x: any(term in x for term in terms)
-                        )
-                    ]
-                    st.write(f"Filtered rows: {len(filtered_df)}")
-                    st.dataframe(filtered_df)
+                    with st.spinner("Filtering rows..."):
+                        terms = [k.strip().lower() for k in keywords.split(",")]
+                        filtered_df = final_df[
+                            final_df[filter_col].astype(str).str.lower().apply(
+                                lambda x: any(term in x for term in terms)
+                            )
+                        ]
+                        st.write(f"Filtered rows: {len(filtered_df)}")
+                        st.dataframe(filtered_df)
 
                 # -----------------------------
                 # Step 5 – Download Results
