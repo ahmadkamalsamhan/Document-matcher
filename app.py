@@ -132,18 +132,14 @@ if uploaded_files:
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR, Partial Match)")
+st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR + Global Keywords)")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
 )
 
 def filter_dataframe_columnwise_partial(df, column_keywords, logic="AND"):
-    """
-    Filters DataFrame column-wise, partial match, case-insensitive.
-    """
     masks = []
-
     for col, keywords in column_keywords.items():
         col_series = df[col].astype(str).str.lower()
         keyword_masks = [col_series.str.contains(k.lower().strip(), regex=False, na=False) for k in keywords]
@@ -151,13 +147,11 @@ def filter_dataframe_columnwise_partial(df, column_keywords, logic="AND"):
             masks.append(pd.concat(keyword_masks, axis=1).any(axis=1))
         else:
             masks.append(pd.Series([True]*len(df), index=df.index))
-
     if logic.upper() == "AND":
         final_mask = pd.concat(masks, axis=1).all(axis=1)
     else:
         final_mask = pd.concat(masks, axis=1).any(axis=1)
-
-    return df[final_mask]
+    return final_mask
 
 if uploaded_filter_file:
     df_filter = pd.read_excel(uploaded_filter_file)
@@ -190,16 +184,23 @@ if uploaded_filter_file:
 
     if st.button("🔍 Apply Filter"):
         df_result = df_filter.copy()
+        final_mask = pd.Series([True]*len(df_result), index=df_result.index)
 
+        # Column-wise filtering
         if not search_all and column_keywords:
-            df_result = filter_dataframe_columnwise_partial(df_result, column_keywords, col_logic)
+            col_mask = filter_dataframe_columnwise_partial(df_result, column_keywords, col_logic)
+            final_mask &= col_mask
 
-        elif search_all and keywords_input.strip():
+        # Global keywords filtering
+        if keywords_input.strip():
             keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
             pattern = "|".join([re.escape(k) for k in keywords])
-            df_result = df_result[df_result.astype(str).apply(
+            global_mask = df_result.astype(str).apply(
                 lambda row: row.str.lower().str.contains(pattern, na=False).any(), axis=1
-            )]
+            )
+            final_mask &= global_mask
+
+        df_result = df_result[final_mask]
 
         if df_result.empty:
             st.error("❌ No rows matched your filters.")
