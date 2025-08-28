@@ -1,19 +1,18 @@
 import streamlit as st
 import pandas as pd
 import re
-from collections import defaultdict
 import tempfile
 import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Optimized Matching", layout="wide")
-st.title("📊 King Salman Park - Optimized Batch Matching App")
+st.set_page_config(page_title="King Salman Park - Exact Colab Matching", layout="wide")
+st.title("📊 King Salman Park - Memory-Safe Matching (Exact Colab Logic)")
 
 # -----------------------------
 # Reset / Clear Uploaded Files safely
 # -----------------------------
-keys_to_clear = ["uploaded_files", "df1_small", "df2_small", "tmp_path"]
+keys_to_clear = ["uploaded_files", "tmp_path"]
 
 if st.button("🗑 Clear Uploaded Files / Reset App"):
     cleared = False
@@ -58,14 +57,6 @@ if uploaded_files:
         include_cols2 = st.multiselect(f"Columns from {selected_files[1].name}", df2_columns)
 
         # -----------------------------
-        # Column warning & dynamic batch size
-        # -----------------------------
-        total_selected = len(include_cols1) + len(include_cols2)
-        if total_selected > 10:
-            st.warning(f"⚠️ You selected {total_selected} columns. This may slow down the app.")
-        batch_size = 200 if total_selected <= 10 else 50
-
-        # -----------------------------
         # Start Matching
         # -----------------------------
         if st.button("Step 3: Start Matching"):
@@ -74,9 +65,9 @@ if uploaded_files:
             elif not include_cols1 and not include_cols2:
                 st.warning("⚠️ Please select at least one additional column to include in the result.")
             else:
-                st.info("⏳ Matching in progress (optimized memory + batch writing)...")
+                st.info("⏳ Matching in progress (exact Colab logic, memory-safe)...")
                 try:
-                    # Load only necessary columns
+                    # Load only needed columns
                     df1_small = pd.read_excel(selected_files[0], usecols=[match_col1]+include_cols1)
                     df2_small = pd.read_excel(selected_files[1], usecols=[match_col2]+include_cols2)
 
@@ -88,22 +79,14 @@ if uploaded_files:
                         text = re.sub(r'\s+', ' ', text).strip()
                         return text
 
-                    # Precompute token sets
+                    # Prepare token sets like Colab
                     df1_small['token_set'] = df1_small[match_col1].apply(normalize).str.split().apply(set)
                     df2_small['norm_match'] = df2_small[match_col2].apply(normalize)
-
-                    # Build token → row index map for fast lookup
-                    token_map = defaultdict(set)
-                    for idx, tokens in df1_small['token_set'].items():
-                        for t in tokens:
-                            token_map[t].add(idx)
 
                     # Temp file for results
                     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                     tmp_path = tmp_file.name
                     tmp_file.close()
-
-                    # Create empty Excel with header
                     pd.DataFrame(columns=include_cols1+include_cols2).to_excel(tmp_path, index=False)
 
                     total_rows = len(df2_small)
@@ -111,29 +94,34 @@ if uploaded_files:
                     status_text = st.empty()
                     start_time = time.time()
 
+                    batch_size = 200
                     buffer_rows = []
 
                     # -----------------------------
-                    # Optimized batch matching loop
+                    # Row-by-row matching (exact Colab logic)
                     # -----------------------------
                     for idx, row in df2_small.iterrows():
-                        mh_tokens = set(row['norm_match'].split())
-                        if mh_tokens:
-                            candidate_sets = [token_map[t] for t in mh_tokens if t in token_map]
-                            if candidate_sets:
-                                candidate_indices = set.intersection(*candidate_sets)
-                                if candidate_indices:
-                                    matched_rows = df1_small.loc[list(candidate_indices), include_cols1].copy()
-                                    for col in include_cols2:
-                                        matched_rows[col] = row[col]
-                                    buffer_rows.append(matched_rows)
+                        norm_val = row['norm_match']
+                        if not norm_val:
+                            continue
+                        row_tokens = set(norm_val.split())
 
-                                    if len(buffer_rows) >= batch_size:
-                                        batch_df = pd.concat(buffer_rows, ignore_index=True)
-                                        with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-                                            startrow = writer.sheets['Sheet1'].max_row
-                                            batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
-                                        buffer_rows = []
+                        # Exact subset check like Colab
+                        mask = df1_small['token_set'].apply(lambda x: row_tokens.issubset(x))
+                        matched_rows = df1_small.loc[mask, include_cols1].copy()
+
+                        if not matched_rows.empty:
+                            # Assign details columns
+                            for col in include_cols2:
+                                matched_rows[col] = row[col]
+                            buffer_rows.append(matched_rows)
+
+                        if len(buffer_rows) >= batch_size:
+                            batch_df = pd.concat(buffer_rows, ignore_index=True)
+                            with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+                                startrow = writer.sheets['Sheet1'].max_row
+                                batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
+                            buffer_rows = []
 
                         # Update progress
                         progress_bar.progress((idx+1)/total_rows)
@@ -159,7 +147,6 @@ if uploaded_files:
                         st.download_button("💾 Download Full Matched Results", data=f,
                                            file_name="matched_results.xlsx")
 
-                    # Remove temp file
                     os.remove(tmp_path)
 
                 except Exception as e:
