@@ -6,8 +6,8 @@ import os
 import time
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="King Salman Park - Matching & Filter App", layout="wide")
-st.title("📊 King Salman Park - Document Processing App")
+st.set_page_config(page_title="📊 Nesma & Partners - Document Processing App", layout="wide")
+st.title("📊 Nesma & Partners - Document Processing App ")
 
 # -----------------------------
 # GLOBAL RESET BUTTON
@@ -28,7 +28,7 @@ if st.button("🗑 Clear/Reset Entire App"):
 # -----------------------------
 # PART 1 - MATCHING
 # -----------------------------
-st.header("🔹 Part 1: Matching Two Excel Files")
+st.header("Matching Two Excel Files")
 
 uploaded_files = st.file_uploader(
     "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
@@ -135,7 +135,7 @@ if uploaded_files:
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
-st.header("🔹 Part 2: Search & Filter Data (Column-wise AND/OR + Global Keywords)")
+st.header("Search & Filter Data")
 
 uploaded_filter_file = st.file_uploader(
     "Upload an Excel file for filtering", type="xlsx", key="filter_file"
@@ -234,7 +234,7 @@ if uploaded_filter_file:
 # -----------------------------
 # PART 3 - Gather Documents from Part 1 Result
 # -----------------------------
-st.header("🔹 Part 3: Gather Documents from Part 1 Result")
+st.header("Gather Documents - Groups")
 
 # Step 0: Upload Part 1 result
 part1_file = st.file_uploader("Upload Part 1 Result Excel file", type="xlsx", key="part3_file")
@@ -297,4 +297,4 @@ if part1_file:
                                    file_name="part3_gathered_results.xlsx")
             os.remove(tmp_file.name)
 else:
-    st.info("Please upload the Excel file you got from Part 1 to start Part 3.")
+    st.info("If needed Please upload the Excel file you got from Part 1 to start Part 3.")
