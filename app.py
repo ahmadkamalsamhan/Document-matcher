@@ -126,10 +126,15 @@ if uploaded_files:
 
                     os.remove(tmp_path)
 
-                # --- UNMATCHED DOCUMENTS ---
-unmatched_rows = df2_small[~df2_small['norm_match'].apply(
-    lambda x: any(x.split() <= s for s in df1_small['token_set'])
-)]
+# --- UNMATCHED DOCUMENTS ---
+def is_unmatched(norm_val, token_sets):
+    if not norm_val:  # skip empty values
+        return False
+    row_tokens = set(norm_val.split())
+    return not any(row_tokens.issubset(s) for s in token_sets)
+
+# Compute unmatched rows
+unmatched_rows = df2_small[df2_small['norm_match'].apply(lambda x: is_unmatched(x, df1_small['token_set']))]
 
 if not unmatched_rows.empty:
     tmp_unmatched_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
