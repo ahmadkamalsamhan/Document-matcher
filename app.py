@@ -1,140 +1,150 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
 from rapidfuzz import fuzz, process, cdist
+import io
 import math
 
 st.set_page_config(page_title="WIR → ITP Tracker", layout="wide")
-st.title("📊 WIR → ITP Activity Tracker (Split & Match)")
+st.title("📊 WIR ↔ ITP Activity Tracker")
 
 # ------------------------------
-# Upload Files
+# Upload Excel Files
 # ------------------------------
-st.header("Step 1: Upload Excel Files")
-
+st.header("Upload Excel Files")
 wir_file = st.file_uploader("Upload WIR Log (.xlsx)", type=["xlsx"])
 itp_file = st.file_uploader("Upload ITP Log (.xlsx)", type=["xlsx"])
 activity_file = st.file_uploader("Upload ITP Activities Log (.xlsx)", type=["xlsx"])
-
 threshold = st.slider("Fuzzy Match Threshold (%)", 70, 100, 90)
 
 # ------------------------------
-# Split WIR into 4 Parts
+# Split WIR into 4 parts
 # ------------------------------
 if wir_file:
-    st.info("Reading WIR Excel file...")
     wir_df = pd.read_excel(wir_file)
-    wir_df.columns = wir_df.columns.str.strip().str.replace('\n',' ').str.replace('\r',' ')
-    st.success(f"✅ WIR loaded: {len(wir_df)} rows")
-
-    # Split
+    st.success(f"Uploaded WIR: {len(wir_df)} rows")
+    
     num_parts = 4
     part_size = math.ceil(len(wir_df) / num_parts)
     wir_parts = []
+    
+    st.subheader("Download WIR Parts")
     for i in range(num_parts):
         start = i * part_size
         end = min((i+1) * part_size, len(wir_df))
         part_df = wir_df.iloc[start:end].reset_index(drop=True)
         wir_parts.append(part_df)
 
-    st.subheader("Download WIR Parts")
-    for idx, part_df in enumerate(wir_parts):
+        # Prepare Excel for download
         output = io.BytesIO()
-        part_df.to_excel(output, index=False, sheet_name=f'WIR_Part{idx+1}')
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            part_df.to_excel(writer, index=False, sheet_name=f"WIR_part{i+1}")
         output.seek(0)
+
         st.download_button(
-            label=f"Download WIR Part {idx+1}",
+            label=f"Download WIR Part {i+1}",
             data=output.getvalue(),
-            file_name=f"WIR_part{idx+1}.xlsx",
+            file_name=f"WIR_part{i+1}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 # ------------------------------
-# Step 2: Process Matching for a WIR Part
+# Start Processing Button
 # ------------------------------
-st.header("Step 2: Process Matching (Upload a WIR Part)")
-
-wir_part_file = st.file_uploader("Upload WIR Part to Process", type=["xlsx"], key="part")
-if wir_part_file and itp_file and activity_file:
-    if st.button("Start Matching"):
+if wir_file and itp_file and activity_file:
+    if st.button("Start Processing All Parts"):
         st.info("Reading Excel files...")
-        wir_part_df = pd.read_excel(wir_part_file)
         itp_df = pd.read_excel(itp_file)
         act_df = pd.read_excel(activity_file)
 
         # Clean columns
         def clean_columns(df):
-            df.columns = df.columns.str.strip().str.replace('\n',' ').str.replace('\r',' ')
+            df.columns = df.columns.str.strip()
+            df.columns = df.columns.str.replace('\n',' ').str.replace('\r',' ')
             return df
 
-        wir_part_df = clean_columns(wir_part_df)
+        wir_df = clean_columns(wir_df)
         itp_df = clean_columns(itp_df)
         act_df = clean_columns(act_df)
 
-        # Detect Columns
-        wir_title_col = [c for c in wir_part_df.columns if 'Title / Description' in c][0]
+        # Detect columns
+        wir_pm_col = [c for c in wir_df.columns if 'PM Web Code' in c][0]
+        wir_title_col = [c for c in wir_df.columns if 'Title / Description2' in c][0]
+
         act_itp_col = [c for c in act_df.columns if 'ITP Reference' in c][0]
         act_desc_col = [c for c in act_df.columns if 'Activiy Description' in c][0]
-
-        # Normalize WIR
-        st.info("🔄 Expanding multi-activity WIR rows...")
-        wir_part_df['ActivitiesList'] = wir_part_df[wir_title_col].astype(str).str.split(r',|\+|/| and |&')
-        wir_exp_df = wir_part_df.explode('ActivitiesList').reset_index(drop=True)
-        wir_exp_df['ActivityNorm'] = wir_exp_df['ActivitiesList'].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
-        st.success(f"✅ Expanded WIR activities: {len(wir_exp_df)} rows total")
 
         # Normalize ITP Activities
         act_df['ITP_Ref_Norm'] = act_df[act_itp_col].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
         act_df['ActivityDescNorm'] = act_df[act_desc_col].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
 
-        # ------------------------------
-        # Vectorized Matching with progress
-        # ------------------------------
-        st.info("🔍 Matching WIR activities to ITP activities...")
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        final_matches = []
 
-        wir_list = wir_exp_df['ActivityNorm'].tolist()
-        itp_list = act_df['ActivityDescNorm'].tolist()
+        # Process each WIR part
+        for idx, part_df in enumerate(wir_parts):
+            st.info(f"🔄 Processing WIR Part {idx+1}")
+            part_df['PM Web Code'] = part_df[wir_pm_col]
+            part_df['PM_Code_Num'] = part_df['PM Web Code'].map(lambda x: 1 if str(x).upper() in ['A','B'] else 2 if str(x).upper() in ['C','D'] else 0)
+            
+            # Expand multi-activity WIR titles
+            part_df['ActivitiesList'] = part_df[wir_title_col].astype(str).str.split(r',|\+|/| and |&')
+            wir_exp_df = part_df.explode('ActivitiesList').reset_index(drop=True)
+            wir_exp_df['ActivityNorm'] = wir_exp_df['ActivitiesList'].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
+            st.success(f"Expanded WIR activities: {len(wir_exp_df)} rows")
 
-        batch_size = 5000
-        best_matches = []
-        scores = []
+            # Vectorized Matching
+            st.info(f"🔍 Matching WIR Part {idx+1} to ITP activities...")
+            wir_list = wir_exp_df['ActivityNorm'].tolist()
+            wir_pm_list = wir_exp_df['PM_Code_Num'].tolist()
+            itp_list = act_df['ActivityDescNorm'].tolist()
 
-        for start in range(0, len(itp_list), batch_size):
-            end = min(start + batch_size, len(itp_list))
-            batch_itp = itp_list[start:end]
-            sim_matrix = cdist(batch_itp, wir_list, scorer=fuzz.ratio)
+            sim_matrix = cdist(itp_list, wir_list, scorer=fuzz.ratio)
             best_idx = np.argmax(sim_matrix, axis=1)
             best_score = np.max(sim_matrix, axis=1)
-            best_matches.extend([wir_exp_df['ActivityNorm'][i] for i in best_idx])
-            scores.extend(best_score)
-            progress_bar.progress(end / len(itp_list))
-            status_text.text(f"Processed {end}/{len(itp_list)} ITP activities")
+            pm_codes = [wir_pm_list[i] if s >= threshold else 0 for i,s in zip(best_idx, best_score)]
 
-        # Build matches DataFrame
-        match_df = pd.DataFrame({
-            'ITP Reference': act_df[act_itp_col],
-            'Activity Description': act_df[act_desc_col],
-            'Best Match': best_matches,
-            'Score': scores
-        })
-        match_df['Status'] = match_df['Score'].apply(lambda x: 1 if x >= threshold else 0)
+            match_df = pd.DataFrame({
+                'ITP Reference': act_df[act_itp_col],
+                'Activity Description': act_df[act_desc_col],
+                'Status': pm_codes
+            })
 
-        st.subheader("Matching Result Preview")
-        st.dataframe(match_df.head(50))
+            audit_df = pd.DataFrame({
+                'ITP Reference': act_df[act_itp_col],
+                'Activity Description': act_df[act_desc_col],
+                'Best Match': [wir_exp_df['ActivityNorm'][i] for i in best_idx],
+                'Score': best_score
+            })
+            audit_df = audit_df[audit_df['Score'] < threshold]
+
+            final_matches.append((match_df, audit_df))
+
+        # Combine results
+        all_match_df = pd.concat([m[0] for m in final_matches]).groupby(['ITP Reference', 'Activity Description']).max().reset_index()
+        all_audit_df = pd.concat([m[1] for m in final_matches]).reset_index(drop=True)
+
+        # Pivot Table
+        pivot_df = all_match_df.pivot_table(index='ITP Reference',
+                                            columns='Activity Description',
+                                            values='Status',
+                                            fill_value=0).reset_index()
+        st.subheader("Activity Completion Status Pivot Table")
+        st.dataframe(pivot_df)
 
         # Excel Output
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            match_df.to_excel(writer, index=False, sheet_name='Matches')
+            pivot_df.to_excel(writer, index=False, sheet_name='PivotedStatus')
+            if not all_audit_df.empty:
+                all_audit_df.to_excel(writer, index=False, sheet_name='Audit_LowConfidence')
         output.seek(0)
 
         st.download_button(
-            label="Download Matching Result",
+            label="Download Full Result Excel",
             data=output.getvalue(),
-            file_name="WIR_ITP_Matching.xlsx",
+            file_name="ITP_WIR_Activity_Status.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.success("✅ Matching completed!")
+
+        st.success("✅ Processing completed successfully!")
