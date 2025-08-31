@@ -1,5 +1,6 @@
 streamlit
 pandas
 numpy
-rapidfuzz
 openpyxl
+sentence-transformers
+torch
