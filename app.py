@@ -127,13 +127,15 @@ if uploaded_files:
                     os.remove(tmp_path)
 
                     # --- Unmatched Documents Preview & Download ---
-                    def is_unmatched(norm_val, token_sets):
+                    def is_unmatched_safe(norm_val, token_sets):
                         if not norm_val:
-                            return False
+                            return True  # treat empty as unmatched
                         row_tokens = set(norm_val.split())
-                        return not any(row_tokens.issubset(s) for s in token_sets)
+                        return not any(row_tokens & s for s in token_sets)
 
-                    unmatched_rows = df2_small[df2_small['norm_match'].apply(lambda x: is_unmatched(x, df1_small['token_set']))]
+                    unmatched_rows = df2_small[df2_small['norm_match'].apply(
+                        lambda x: is_unmatched_safe(x, df1_small['token_set'])
+                    )]
 
                     if not unmatched_rows.empty:
                         tmp_unmatched_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
@@ -147,7 +149,6 @@ if uploaded_files:
                         with open(tmp_unmatched_path, "rb") as f:
                             st.download_button("💾 Download Unmatched Documents", data=f,
                                                file_name="unmatched_documents.xlsx")
-
                         os.remove(tmp_unmatched_path)
                     else:
                         st.info("🎉 No unmatched documents found.")
