@@ -123,35 +123,33 @@ if uploaded_files:
                     with open(tmp_path, "rb") as f:
                         st.download_button("💾 Download Full Matched Results", data=f,
                                            file_name="matched_results.xlsx")
-
                     os.remove(tmp_path)
 
-# --- UNMATCHED DOCUMENTS ---
-def is_unmatched(norm_val, token_sets):
-    if not norm_val:  # skip empty values
-        return False
-    row_tokens = set(norm_val.split())
-    return not any(row_tokens.issubset(s) for s in token_sets)
+                    # --- UNMATCHED DOCUMENTS ---
+                    def is_unmatched(norm_val, token_sets):
+                        if not norm_val:
+                            return False
+                        row_tokens = set(norm_val.split())
+                        return not any(row_tokens.issubset(s) for s in token_sets)
 
-# Compute unmatched rows
-unmatched_rows = df2_small[df2_small['norm_match'].apply(lambda x: is_unmatched(x, df1_small['token_set']))]
+                    unmatched_rows = df2_small[df2_small['norm_match'].apply(lambda x: is_unmatched(x, df1_small['token_set']))]
 
-if not unmatched_rows.empty:
-    tmp_unmatched_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    tmp_unmatched_path = tmp_unmatched_file.name
-    tmp_unmatched_file.close()
+                    if not unmatched_rows.empty:
+                        tmp_unmatched_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+                        tmp_unmatched_path = tmp_unmatched_file.name
+                        tmp_unmatched_file.close()
 
-    unmatched_rows.to_excel(tmp_unmatched_path, index=False)
-    st.subheader("Preview of Unmatched Documents (first 100 rows)")
-    st.dataframe(unmatched_rows.head(100))
+                        unmatched_rows.to_excel(tmp_unmatched_path, index=False)
+                        st.subheader("Preview of Unmatched Documents (first 100 rows)")
+                        st.dataframe(unmatched_rows.head(100))
 
-    with open(tmp_unmatched_path, "rb") as f:
-        st.download_button("💾 Download Unmatched Documents", data=f,
-                           file_name="unmatched_documents.xlsx")
+                        with open(tmp_unmatched_path, "rb") as f:
+                            st.download_button("💾 Download Unmatched Documents", data=f,
+                                               file_name="unmatched_documents.xlsx")
 
-    os.remove(tmp_unmatched_path)
-else:
-    st.info("🎉 No unmatched documents found.")
+                        os.remove(tmp_unmatched_path)
+                    else:
+                        st.info("🎉 No unmatched documents found.")
 
                 except Exception as e:
                     st.error(f"❌ Error during matching: {e}")
