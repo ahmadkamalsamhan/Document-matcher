@@ -116,6 +116,7 @@ if uploaded_files:
                     end_time = time.time()
                     st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
 
+                    # --- Matched Results Preview & Download ---
                     preview_df = pd.read_excel(tmp_path, nrows=100)
                     st.subheader("Preview of Matched Results (first 100 rows)")
                     st.dataframe(preview_df)
@@ -125,7 +126,7 @@ if uploaded_files:
                                            file_name="matched_results.xlsx")
                     os.remove(tmp_path)
 
-                    # --- UNMATCHED DOCUMENTS ---
+                    # --- Unmatched Documents Preview & Download ---
                     def is_unmatched(norm_val, token_sets):
                         if not norm_val:
                             return False
@@ -156,7 +157,6 @@ if uploaded_files:
 
     else:
         st.warning("⚠️ Please select at least 2 files for matching.")
-
 # -----------------------------
 # PART 2 - SEARCH & FILTER
 # -----------------------------
