@@ -126,6 +126,28 @@ if uploaded_files:
 
                     os.remove(tmp_path)
 
+                # --- UNMATCHED DOCUMENTS ---
+unmatched_rows = df2_small[~df2_small['norm_match'].apply(
+    lambda x: any(x.split() <= s for s in df1_small['token_set'])
+)]
+
+if not unmatched_rows.empty:
+    tmp_unmatched_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    tmp_unmatched_path = tmp_unmatched_file.name
+    tmp_unmatched_file.close()
+
+    unmatched_rows.to_excel(tmp_unmatched_path, index=False)
+    st.subheader("Preview of Unmatched Documents (first 100 rows)")
+    st.dataframe(unmatched_rows.head(100))
+
+    with open(tmp_unmatched_path, "rb") as f:
+        st.download_button("💾 Download Unmatched Documents", data=f,
+                           file_name="unmatched_documents.xlsx")
+
+    os.remove(tmp_unmatched_path)
+else:
+    st.info("🎉 No unmatched documents found.")
+
                 except Exception as e:
                     st.error(f"❌ Error during matching: {e}")
 
