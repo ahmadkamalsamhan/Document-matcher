@@ -1,300 +1,163 @@
+# ------------------------------
+# Ultra High-Performance WIR ↔ ITP Tracker
+# Vectorized Matching with RapidFuzz cdist
+# ------------------------------
+
 import streamlit as st
 import pandas as pd
-import re
-import tempfile
-import os
+import numpy as np
+from rapidfuzz import fuzz, process, cdist
+import io
 import time
-from openpyxl import load_workbook
 
-st.set_page_config(page_title="📊 Nesma & Partners - Document Processing App", layout="wide")
-st.title("📊 Nesma & Partners - Document Processing App ")
+# ------------------------------
+# Streamlit Page Config
+# ------------------------------
+st.set_page_config(page_title="Ultra High-Performance WIR → ITP Tracker", layout="wide")
+st.title("📊 WIR → ITP Activity Tracking Tool (Ultra High Performance)")
 
-# -----------------------------
-# GLOBAL RESET BUTTON
-# -----------------------------
-if st.button("🗑 Clear/Reset Entire App"):
-    keys_to_clear = ["uploaded_files", "tmp_path", "filter_file"]
-    cleared = False
-    for key in keys_to_clear:
-        if key in st.session_state:
-            del st.session_state[key]
-            cleared = True
-    if cleared:
-        st.success("✅ App fully reset. All uploaded files and filters cleared.")
-        st.experimental_rerun()
-    else:
-        st.success("✅ App is already clean. You can continue normally.")
+# ------------------------------
+# File Upload
+# ------------------------------
+st.header("📁 Upload Excel Files")
+wir_file = st.file_uploader("Upload WIR Log (.xlsx)", type=["xlsx"])
+itp_file = st.file_uploader("Upload ITP Log (.xlsx)", type=["xlsx"])
+activity_file = st.file_uploader("Upload ITP Activities Log (.xlsx)", type=["xlsx"])
 
-# -----------------------------
-# PART 1 - MATCHING
-# -----------------------------
-st.header("Matching Two Excel Files")
+threshold = st.slider("Fuzzy Match Threshold (%)", 70, 100, 90)
 
-uploaded_files = st.file_uploader(
-    "Upload Excel files", type="xlsx", accept_multiple_files=True, key="uploaded_files"
-)
+# ------------------------------
+# Start Processing
+# ------------------------------
+if wir_file and itp_file and activity_file:
+    if st.button("Start Processing"):
 
-if uploaded_files:
-    st.subheader("Select files to use for matching")
-    selected_files = [f for f in uploaded_files if st.checkbox(f.name, value=True)]
-    if len(selected_files) >= 2:
-        st.success(f"{len(selected_files)} files selected for matching.")
+        st.info("📖 Reading Excel files...")
+        wir_df = pd.read_excel(wir_file)
+        itp_df = pd.read_excel(itp_file)
+        act_df = pd.read_excel(activity_file)
 
-        df1_columns = pd.read_excel(selected_files[0], nrows=0).columns.tolist()
-        df2_columns = pd.read_excel(selected_files[1], nrows=0).columns.tolist()
+        # ------------------------------
+        # Clean Columns
+        # ------------------------------
+        def clean_columns(df):
+            df.columns = df.columns.str.strip().str.replace('\n',' ').str.replace('\r',' ')
+            return df
 
-        st.subheader("Step 1: Select column to match")
-        match_col1 = st.selectbox(f"Column from {selected_files[0].name}", df1_columns)
-        match_col2 = st.selectbox(f"Column from {selected_files[1].name}", df2_columns)
+        wir_df = clean_columns(wir_df)
+        itp_df = clean_columns(itp_df)
+        act_df = clean_columns(act_df)
 
-        st.subheader("Step 2: Select additional columns to include in the result")
-        include_cols1 = st.multiselect(f"Columns from {selected_files[0].name}", df1_columns)
-        include_cols2 = st.multiselect(f"Columns from {selected_files[1].name}", df2_columns)
+        # ------------------------------
+        # Detect Relevant Columns
+        # ------------------------------
+        wir_pm_col = [c for c in wir_df.columns if 'PM Web Code' in c][0]
+        wir_title_col = [c for c in wir_df.columns if 'Title / Description2' in c][0]
 
-        if st.button("Step 3: Start Matching"):
-            if not match_col1 or not match_col2:
-                st.warning("⚠️ Please select columns to match.")
-            elif not include_cols1 and not include_cols2:
-                st.warning("⚠️ Please select at least one additional column to include in the result.")
-            else:
-                st.info("⏳ Matching in progress (exact Colab logic, memory-safe)...")
-                try:
-                    df1_small = pd.read_excel(selected_files[0], usecols=[match_col1] + include_cols1)
-                    df2_small = pd.read_excel(selected_files[1], usecols=[match_col2] + include_cols2)
+        act_itp_col = [c for c in act_df.columns if 'ITP Reference' in c][0]
+        act_desc_col = [c for c in act_df.columns if 'Activiy Description' in c][0]
 
-                    def normalize(text):
-                        if pd.isna(text): return ""
-                        text = str(text).lower()
-                        text = re.sub(r'[^a-z0-9\s]', ' ', text)
-                        text = re.sub(r'\s+', ' ', text).strip()
-                        return text
+        # ------------------------------
+        # Normalize WIR
+        # ------------------------------
+        wir_df['PM Web Code'] = wir_df[wir_pm_col]
+        wir_df['PM_Code_Num'] = wir_df['PM Web Code'].map(lambda x: 1 if str(x).upper() in ['A','B'] else 2 if str(x).upper() in ['C','D'] else 0)
 
-                    df1_small['token_set'] = df1_small[match_col1].apply(normalize).str.split().apply(set)
-                    df2_small['norm_match'] = df2_small[match_col2].apply(normalize)
+        st.info("🔄 Expanding multi-activity WIR rows...")
+        wir_df['ActivitiesList'] = wir_df[wir_title_col].astype(str).str.split(r',|\+|/| and |&')
+        wir_exp_df = wir_df.explode('ActivitiesList').reset_index(drop=True)
+        wir_exp_df['ActivityNorm'] = wir_exp_df['ActivitiesList'].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
+        st.success(f"✅ Expanded WIR activities: {len(wir_exp_df)} rows total")
 
-                    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-                    tmp_path = tmp_file.name
-                    tmp_file.close()
-                    pd.DataFrame(columns=include_cols1 + include_cols2).to_excel(tmp_path, index=False)
+        # ------------------------------
+        # Normalize ITP Activities
+        # ------------------------------
+        act_df['ITP_Ref_Norm'] = act_df[act_itp_col].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
+        act_df['ActivityDescNorm'] = act_df[act_desc_col].astype(str).str.upper().str.strip().str.replace("-", "").str.replace(" ", "")
 
-                    total_rows = len(df2_small)
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    start_time = time.time()
+        # ------------------------------
+        # Vectorized Matching using RapidFuzz cdist
+        # ------------------------------
+        st.info("🔍 Matching WIR activities to ITP activities...")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-                    batch_size = 200
-                    buffer_rows = []
+        wir_list = wir_exp_df['ActivityNorm'].tolist()
+        wir_pm_list = wir_exp_df['PM_Code_Num'].tolist()
+        itp_list = act_df['ActivityDescNorm'].tolist()
 
-                    for idx, row in df2_small.iterrows():
-                        norm_val = row['norm_match']
-                        if not norm_val:
-                            continue
-                        row_tokens = set(norm_val.split())
-                        mask = df1_small['token_set'].apply(lambda x: row_tokens.issubset(x))
-                        matched_rows = df1_small.loc[mask, include_cols1].copy()
-                        if not matched_rows.empty:
-                            for col in include_cols2:
-                                matched_rows[col] = row[col]
-                            buffer_rows.append(matched_rows)
-                        if len(buffer_rows) >= batch_size:
-                            batch_df = pd.concat(buffer_rows, ignore_index=True)
-                            with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a',
-                                                if_sheet_exists='overlay') as writer:
-                                startrow = writer.sheets['Sheet1'].max_row
-                                batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
-                            buffer_rows = []
-                        progress_bar.progress((idx + 1) / total_rows)
-                        status_text.text(f"Processing row {idx + 1}/{total_rows} ({(idx + 1) / total_rows * 100:.1f}%)")
+        # Batch processing to show progress
+        batch_size = 1000
+        num_batches = int(np.ceil(len(wir_list)/batch_size))
 
-                    if buffer_rows:
-                        batch_df = pd.concat(buffer_rows, ignore_index=True)
-                        with pd.ExcelWriter(tmp_path, engine='openpyxl', mode='a',
-                                            if_sheet_exists='overlay') as writer:
-                            startrow = writer.sheets['Sheet1'].max_row
-                            batch_df.to_excel(writer, index=False, header=False, startrow=startrow)
+        best_idx_list = []
+        best_score_list = []
 
-                    end_time = time.time()
-                    st.success(f"✅ Matching complete in {end_time - start_time:.2f} seconds")
+        for i in range(num_batches):
+            start = i*batch_size
+            end = min((i+1)*batch_size, len(wir_list))
+            batch = wir_list[start:end]
+            sim_matrix = cdist(itp_list, batch, scorer=fuzz.ratio)
+            best_idx = np.argmax(sim_matrix, axis=0)
+            best_score = np.max(sim_matrix, axis=0)
+            best_idx_list.extend(best_idx.tolist())
+            best_score_list.extend(best_score.tolist())
+            progress_bar.progress((i+1)/num_batches)
+            status_text.text(f"Processed {end}/{len(wir_list)} WIR activities...")
+            time.sleep(0.01)  # small sleep to allow Streamlit UI update
 
-                    preview_df = pd.read_excel(tmp_path, nrows=100)
-                    st.subheader("Preview of Matched Results (first 100 rows)")
-                    st.dataframe(preview_df)
+        # Determine PM codes based on threshold
+        pm_codes = [wir_pm_list[i] if s >= threshold else 0 for i,s in zip(range(len(best_score_list)), best_score_list)]
 
-                    with open(tmp_path, "rb") as f:
-                        st.download_button("💾 Download Full Matched Results", data=f,
-                                           file_name="matched_results.xlsx")
+        # ------------------------------
+        # Build Matches DataFrame
+        # ------------------------------
+        match_df = pd.DataFrame({
+            'ITP Reference': act_df[act_itp_col],
+            'Activity Description': act_df[act_desc_col],
+            'Status': pm_codes
+        })
 
-                    os.remove(tmp_path)
+        # ------------------------------
+        # Build Audit for Low Confidence Matches
+        # ------------------------------
+        audit_df = pd.DataFrame({
+            'ITP Reference': act_df[act_itp_col],
+            'Activity Description': act_df[act_desc_col],
+            'Best Match': [wir_exp_df['ActivityNorm'][i] for i in best_idx_list],
+            'Score': best_score_list
+        })
+        audit_df = audit_df[audit_df['Score'] < threshold]
 
-                except Exception as e:
-                    st.error(f"❌ Error during matching: {e}")
+        progress_bar.progress(1.0)
+        status_text.text("✅ Matching completed!")
 
-    else:
-        st.warning("⚠️ Please select at least 2 files for matching.")
+        # ------------------------------
+        # Pivot Table
+        # ------------------------------
+        pivot_df = match_df.pivot_table(index='ITP Reference',
+                                        columns='Activity Description',
+                                        values='Status',
+                                        fill_value=0).reset_index()
 
-# -----------------------------
-# PART 2 - SEARCH & FILTER
-# -----------------------------
-st.header("Search & Filter Data")
+        st.subheader("Activity Completion Status Pivot Table")
+        st.dataframe(pivot_df)
 
-uploaded_filter_file = st.file_uploader(
-    "Upload an Excel file for filtering", type="xlsx", key="filter_file"
-)
+        # ------------------------------
+        # Excel Output with Audit Sheet
+        # ------------------------------
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            pivot_df.to_excel(writer, index=False, sheet_name='PivotedStatus')
+            if not audit_df.empty:
+                audit_df.to_excel(writer, index=False, sheet_name='Audit_LowConfidence')
+        output.seek(0)
 
-def filter_dataframe_columnwise_partial(df, column_keywords, logic="AND"):
-    masks = []
-    for col, keywords in column_keywords.items():
-        col_series = df[col].astype(str).str.lower()
-        keyword_masks = [col_series.str.contains(k.lower().strip(), regex=False, na=False) for k in keywords]
-        if keyword_masks:
-            masks.append(pd.concat(keyword_masks, axis=1).any(axis=1))
-        else:
-            masks.append(pd.Series([True]*len(df), index=df.index))
-    if logic.upper() == "AND":
-        final_mask = pd.concat(masks, axis=1).all(axis=1)
-    else:
-        final_mask = pd.concat(masks, axis=1).any(axis=1)
-    return final_mask
-
-if uploaded_filter_file:
-    df_filter = pd.read_excel(uploaded_filter_file)
-    st.success(f"✅ File {uploaded_filter_file.name} uploaded with {len(df_filter)} rows.")
-
-    search_all = st.checkbox("🔎 Search across all columns (ignore column selection)")
-
-    column_keywords = {}
-    col_logic = "AND"
-    keywords_input = ""
-    global_logic = "OR"
-
-    if not search_all:
-        filter_cols = st.multiselect("Select columns to apply filters on", df_filter.columns.tolist())
-        for col in filter_cols:
-            keywords = st.text_input(f"Keywords for '{col}' (comma-separated)")
-            if keywords:
-                column_keywords[col] = [k.strip() for k in keywords.split(",") if k.strip()]
-        col_logic_radio = st.radio(
-            "Select cross-column logic for multiple columns",
-            options=["AND (match all columns)", "OR (match any column)"],
-            index=0
+        st.download_button(
+            label="💾 Download Excel",
+            data=output.getvalue(),
+            file_name="ITP_WIR_Activity_Status.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        col_logic = "AND" if col_logic_radio.startswith("AND") else "OR"
 
-    st.subheader("Global Search Options")
-    keywords_input = st.text_input("Enter keywords to search across all columns (comma-separated)")
-    global_logic_radio = st.radio(
-        "Global keyword logic",
-        options=["AND (match all keywords)", "OR (match any keyword)"],
-        index=1
-    )
-    global_logic = "AND" if global_logic_radio.startswith("AND") else "OR"
-
-    max_preview = st.number_input("Preview rows (max)", min_value=10, max_value=1000, value=200)
-
-    if st.button("🔍 Apply Filter"):
-        df_result = df_filter.copy()
-        final_mask = pd.Series([True]*len(df_result), index=df_result.index)
-
-        # Column-wise filtering
-        if not search_all and column_keywords:
-            col_mask = filter_dataframe_columnwise_partial(df_result, column_keywords, col_logic)
-            final_mask &= col_mask
-
-        # Global keywords filtering with AND/OR logic
-        if keywords_input.strip():
-            keywords = [k.lower().strip() for k in keywords_input.split(",") if k.strip()]
-            masks = []
-            for k in keywords:
-                mask = df_result.astype(str).apply(lambda row: row.str.lower().str.contains(re.escape(k), na=False).any(), axis=1)
-                masks.append(mask)
-            if global_logic.upper() == "AND":
-                global_mask = pd.concat(masks, axis=1).all(axis=1)
-            else:
-                global_mask = pd.concat(masks, axis=1).any(axis=1)
-            final_mask &= global_mask
-
-        df_result = df_result[final_mask]
-
-        if df_result.empty:
-            st.error("❌ No rows matched your filters.")
-        else:
-            st.success(f"✅ Found {len(df_result)} matching rows.")
-            st.dataframe(df_result.head(max_preview))
-
-            csv = df_result.to_csv(index=False).encode("utf-8")
-            st.download_button("💾 Download Filtered Results (CSV)", data=csv,
-                               file_name="filtered_results.csv")
-
-            tmp_xlsx = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            df_result.to_excel(tmp_xlsx.name, index=False)
-            with open(tmp_xlsx.name, "rb") as f:
-                st.download_button("💾 Download Filtered Results (XLSX)", data=f,
-                                   file_name="filtered_results.xlsx")
-            os.remove(tmp_xlsx.name)
-# -----------------------------
-# PART 3 - Gather Documents from Part 1 Result
-# -----------------------------
-st.header("Gather Documents - Groups")
-
-# Step 0: Upload Part 1 result
-part1_file = st.file_uploader("Upload Part 1 Result Excel file", type="xlsx", key="part3_file")
-
-if part1_file:
-    part3_df = pd.read_excel(part1_file)
-    st.success(f"✅ Loaded uploaded file with {len(part3_df)} rows")
-
-    # Step 1: Select key column to group/gather by
-    key_col = st.selectbox("Select column to gather on (e.g., Start Structure)", part3_df.columns)
-
-    # Step 2: Automatically select all other columns for result
-    default_cols = [col for col in part3_df.columns if col != key_col]
-    include_cols = st.multiselect(
-        "Select additional columns to include in the result",
-        part3_df.columns,
-        default=default_cols
-    )
-
-    # Step 3: Start gathering
-    if st.button("Start Part 3 Gathering"):
-        if not key_col:
-            st.warning("⚠️ Please select a key column.")
-        elif not include_cols:
-            st.warning("⚠️ Please select at least one additional column to include in the result.")
-        else:
-            st.info("⏳ Gathering in progress (memory-safe)...")
-            import time
-            start_time = time.time()
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            results = []
-            grouped = part3_df.groupby(key_col, dropna=False)
-            total_groups = len(grouped)
-
-            for idx, (group_val, group_df) in enumerate(grouped, 1):
-                merged_row = {key_col: group_val}
-                for col in include_cols:
-                    merged_row[col] = " / ".join(group_df[col].astype(str).unique())
-                results.append(merged_row)
-
-                progress_bar.progress(idx / total_groups)
-                status_text.text(f"Processing {idx}/{total_groups} groups ({idx/total_groups*100:.1f}%)")
-
-            final_grouped = pd.DataFrame(results)
-            end_time = time.time()
-            st.success(f"✅ Gathering complete in {end_time - start_time:.2f} seconds")
-
-            # Preview first 100 rows
-            st.subheader("Preview of Gathered Results (first 100 rows)")
-            st.dataframe(final_grouped.head(100))
-
-            # Download full results
-            import tempfile, os
-            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            final_grouped.to_excel(tmp_file.name, index=False)
-            with open(tmp_file.name, "rb") as f:
-                st.download_button("💾 Download Gathered Results", data=f,
-                                   file_name="part3_gathered_results.xlsx")
-            os.remove(tmp_file.name)
-else:
-    st.info("If needed Please upload the Excel file you got from Part 1 to start Part 3.")
+        st.success("🎉 Processing completed successfully!")
